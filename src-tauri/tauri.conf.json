@@ -35,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "appimage", "deb", "dmg"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -43,40 +43,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
-    "externalBin": [],
     "copyright": "© 2025 Gustavo Automatización",
     "category": "Graphics",
     "shortDescription": "Empaquetado inteligente y eficiente de imágenes",
     "longDescription": "PackImg permite empaquetar múltiples imágenes en un lienzo de la manera más eficiente posible usando el algoritmo MaxRects. Ideal para crear atlases de texturas, spritesheets, o simplemente optimizar el espacio de almacenamiento.",
-    "license": "MIT",
-    "licenseFile": "",
-    "windows": {
-      "certificateThumbprint": "",
-      "digestAlgorithm": "sha256",
-      "timestampUrl": "",
-      "webviewInstallMode": {
-        "type": "embedBootstrapper"
-      }
-    },
-    "macOS": {
-      "frameworks": [],
-      "minimumSystemVersion": "10.15",
-      "exceptionDomain": "",
-      "signingIdentity": null,
-      "entitlements": null,
-      "providerShortName": null
-    },
-    "linux": {
-      "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "librsvg2-2"],
-        "section": "graphics",
-        "priority": "optional"
-      },
-      "appimage": {
-        "bundleMediaFramework": false
-      }
-    }
+    "license": "MIT"
   },
   "plugins": {}
 }

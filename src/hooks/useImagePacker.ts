@@ -1,6 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy } from '../types';
 import { createImageFile, packImages, calculateOptimalCanvasSize } from '../utils/packing';
+
+export const MAX_IMAGES = 50;
 
 interface UseImagePackerReturn {
   // State
@@ -21,6 +23,7 @@ interface UseImagePackerReturn {
   runPacking: () => Promise<void>;
   resetPacking: () => void;
   downloadResult: () => void;
+  dismissError: () => void;
 }
 
 export function useImagePacker(): UseImagePackerReturn {
@@ -36,6 +39,13 @@ export function useImagePacker(): UseImagePackerReturn {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Mirror of `images` so async callbacks can read the current count without
+  // re-creating themselves (and re-triggering every memoized child).
+  const imagesRef = useRef<ImageFile[]>([]);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
   // Sync canvasSize with options
   useEffect(() => {
     setOptions(prev => ({ ...prev, canvasSize }));
@@ -44,18 +54,35 @@ export function useImagePacker(): UseImagePackerReturn {
   const addImages = useCallback(async (files: File[]) => {
     setError(null);
     const validFiles = files.filter(f => f.type.startsWith('image/'));
-    
+
     if (validFiles.length === 0) {
       setError('No se seleccionaron archivos de imagen válidos');
       return;
     }
 
+    const room = MAX_IMAGES - imagesRef.current.length;
+    if (room <= 0) {
+      setError(`Límite alcanzado: máximo ${MAX_IMAGES} imágenes por empaquetado`);
+      return;
+    }
+
     try {
       const newImages = await Promise.all(validFiles.map(createImageFile));
-      setImages(prev => [...prev, ...newImages]);
+      const accepted = newImages.slice(0, room);
+      setImages(prev => [...prev, ...accepted]);
+
+      if (accepted.length < newImages.length) {
+        setError(
+          `Se añadieron ${accepted.length} de ${newImages.length} imágenes: el límite es ${MAX_IMAGES}`
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar las imágenes');
     }
+  }, []);
+
+  const dismissError = useCallback(() => {
+    setError(null);
   }, []);
 
   const removeImage = useCallback((id: string) => {
@@ -149,13 +176,22 @@ export function useImagePacker(): UseImagePackerReturn {
     });
   }, [result]);
 
-  // Auto-calculate optimal canvas size when images change
+  // Auto-calculate the optimal canvas size when the image *set* changes.
+  // Keyed on the set signature (not on `result`), so a manual size edit or a pack
+  // cycle is never silently overwritten.
+  const autoSizedSignature = useRef<string | null>(null);
   useEffect(() => {
-    if (images.length > 0 && !result) {
-      const optimal = calculateOptimalCanvasSize(images);
-      setCanvasSizeState(optimal);
+    if (images.length === 0) {
+      autoSizedSignature.current = null;
+      return;
     }
-  }, [images, result]);
+
+    const signature = images.map(img => img.id).join('|');
+    if (autoSizedSignature.current === signature) return;
+
+    autoSizedSignature.current = signature;
+    setCanvasSizeState(calculateOptimalCanvasSize(images));
+  }, [images]);
 
   return {
     images,
@@ -173,5 +209,6 @@ export function useImagePacker(): UseImagePackerReturn {
     runPacking,
     resetPacking,
     downloadResult,
+    dismissError,
   };
 }

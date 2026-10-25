@@ -55,14 +55,6 @@
       "certificateThumbprint": "",
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "installerHeaderIcon": "icons/icon.ico",
-        "allowToChangeInstallDirectory": true,
-        "oneClick": false,
-        "perMachine": false,
-        "displayLanguageSelector": false
-      },
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       }

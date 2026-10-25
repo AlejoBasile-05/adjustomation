@@ -20,26 +20,21 @@ jobs:
             args: ''
             artifact_name: 'packimg-windows'
             asset_name: 'PackImg_${{ github.ref_name }}_windows_x64'
-            # NSIS installer + portable exe
-            nsis: true
           # macOS Intel
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
             artifact_name: 'packimg-macos-intel'
             asset_name: 'PackImg_${{ github.ref_name }}_macos_x64'
-            nsis: false
           # macOS Apple Silicon
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
             artifact_name: 'packimg-macos-arm'
             asset_name: 'PackImg_${{ github.ref_name }}_macos_arm64'
-            nsis: false
           # Linux
           - platform: 'ubuntu-latest'
             args: ''
             artifact_name: 'packimg-linux'
             asset_name: 'PackImg_${{ github.ref_name }}_linux_x64'
-            nsis: false
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -90,9 +85,6 @@ jobs:
             ### Verificación:
             Los archivos están firmados con checksums SHA256.
           args: ${{ matrix.args }}
-          # Windows: generar NSIS installer + portable
-          # macOS: generar DMG
-          # Linux: generar AppImage + deb
           release: true
           prerelease: false
 

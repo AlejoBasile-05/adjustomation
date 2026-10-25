@@ -61,11 +61,7 @@
         "allowToChangeInstallDirectory": true,
         "oneClick": false,
         "perMachine": false,
-        "displayLanguageSelector": false,
-        "createDesktopShortcut": "always",
-        "createStartMenuShortcut": true,
-        "shortcutName": "PackImg",
-        "runAfterFinish": true
+        "displayLanguageSelector": false
       },
       "webviewInstallMode": {
         "type": "embedBootstrapper"

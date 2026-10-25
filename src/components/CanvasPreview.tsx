@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { Grid3x3, LayoutGrid, Maximize2, Scan } from 'lucide-react';
+import { cn } from '../utils/cn';
 import type { PackedImage, CanvasSize } from '../types';
 
 interface CanvasPreviewProps {
@@ -8,97 +11,167 @@ interface CanvasPreviewProps {
   backgroundColor?: string;
 }
 
-export function CanvasPreview({ 
-  packedImages, 
-  canvasSize, 
-  padding, 
+type ZoomMode = 'fit' | 'actual';
+
+export function CanvasPreview({
+  packedImages,
+  canvasSize,
+  padding,
   showGrid = true,
-  backgroundColor = '#ffffff'
+  backgroundColor = '#ffffff',
 }: CanvasPreviewProps) {
-  // Calculate scale to fit in container
-  const containerWidth = 720; // max width
-  const containerHeight = 540; // max height
-  const scale = Math.min(
-    containerWidth / canvasSize.width,
-    containerHeight / canvasSize.height,
-    1
-  );
-  
+  const [zoomMode, setZoomMode] = useState<ZoomMode>('fit');
+  const [gridVisible, setGridVisible] = useState(showGrid);
+
+  // Fit the plate inside a 720x540 budget, never upscaling past 1:1.
+  const fitScale = Math.min(720 / canvasSize.width, 540 / canvasSize.height, 1);
+  const scale = zoomMode === 'fit' ? fitScale : 1;
+
   const displayWidth = canvasSize.width * scale;
   const displayHeight = canvasSize.height * scale;
+  const isEmpty = packedImages.length === 0;
 
-  if (packedImages.length === 0) {
+  if (isEmpty) {
     return (
-      <div className="flex items-center justify-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[300px]">
-        <div className="text-center text-slate-500 dark:text-slate-400">
-          <p className="text-lg font-medium">No hay imágenes empaquetadas</p>
-          <p className="text-sm mt-1">Ejecuta el empaquetado para ver el resultado</p>
+      <div className="flex flex-col items-center justify-center gap-3 rounded-control border border-dashed border-line-strong bg-sunken/50 px-6 py-14 text-center">
+        <div className="grid h-12 w-12 place-items-center rounded-control border border-dashed border-line-strong bg-raised text-muted">
+          <LayoutGrid className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-display text-sm font-semibold text-fg-soft">El lienzo está vacío</p>
+          <p className="max-w-[38ch] text-xs text-muted">
+            Carga imágenes y ejecuta el empaquetado para ver el resultado aquí.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <div className="relative" style={{ width: displayWidth, height: displayHeight }}>
-        {/* Canvas background */}
-        <div
-          className="absolute inset-0"
-          style={{ backgroundColor }}
-        />
-        
-        {/* Grid overlay */}
-        {showGrid && (
-          <div className="absolute inset-0 pointer-events-none" style={{
-            backgroundImage: `
-              linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px)
-            `,
-            backgroundSize: `${50 * scale}px ${50 * scale}px`,
-          }} />
-        )}
-        
-        {/* Packed images */}
-        {packedImages.map((img) => (
+    <div className="space-y-2.5">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="eyebrow">Ajuste de vista</span>
+
+        <div className="flex items-center gap-1">
           <div
-            key={img.id}
-            className="absolute"
-            style={{
-              left: img.x * scale,
-              top: img.y * scale,
-              width: img.displayWidth * scale,
-              height: img.displayHeight * scale,
-              transform: img.rotated ? 'rotate(90deg)' : 'none',
-              transformOrigin: 'top left',
-            }}
+            className="flex items-center gap-0.5 rounded-control border border-line bg-sunken p-0.5"
+            role="group"
+            aria-label="Zoom del lienzo"
           >
-            <img
-              src={img.preview}
-              alt={img.file.name}
-              className="w-full h-full object-cover"
-              style={{
-                imageRendering: 'crisp-edges',
-              }}
-            />
-            {/* Padding visualization */}
-            {padding > 0 && (
-              <div className="absolute inset-0 border border-slate-300/50 dark:border-slate-600/50 pointer-events-none" 
-                style={{ 
-                  margin: -padding * scale,
-                  borderWidth: `${Math.max(1, padding * scale)}px`,
+            <button
+              type="button"
+              onClick={() => setZoomMode('fit')}
+              aria-pressed={zoomMode === 'fit'}
+              className={cn(
+                'btn gap-1.5 rounded-[8px] px-2.5 py-1 text-[11px]',
+                zoomMode === 'fit'
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-muted hover:text-fg'
+              )}
+            >
+              <Scan className="h-3.5 w-3.5" aria-hidden="true" />
+              Ajustar
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomMode('actual')}
+              aria-pressed={zoomMode === 'actual'}
+              className={cn(
+                'btn gap-1.5 rounded-[8px] px-2.5 py-1 text-[11px]',
+                zoomMode === 'actual'
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-muted hover:text-fg'
+              )}
+            >
+              <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+              100%
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setGridVisible((visible) => !visible)}
+            aria-pressed={gridVisible}
+            aria-label={gridVisible ? 'Ocultar cuadrícula' : 'Mostrar cuadrícula'}
+            className={cn(
+              'btn btn-ghost btn-icon h-8 w-8',
+              gridVisible ? 'text-accent' : 'text-muted'
+            )}
+          >
+            <Grid3x3 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {/* Drafting-table well */}
+      <div className="relative overflow-auto scroll-thin rounded-control border border-line bg-sunken blueprint">
+        <div className="grain pointer-events-none absolute inset-0" aria-hidden="true" />
+
+        <div className="relative flex min-h-[300px] min-w-full items-center justify-center p-4">
+          {/* Paper plate */}
+          <div
+            className="relative shrink-0 shadow-lift ring-1 ring-line-strong"
+            style={{ width: displayWidth, height: displayHeight }}
+          >
+            <div className="absolute inset-0" style={{ backgroundColor }} />
+
+            {gridVisible && (
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  backgroundImage:
+                    'linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px)',
+                  backgroundSize: `${Math.max(8, 50 * scale)}px ${Math.max(8, 50 * scale)}px`,
                 }}
               />
             )}
+
+            {packedImages.map((img) => (
+              <div
+                key={img.id}
+                className="absolute"
+                style={{
+                  left: img.x * scale,
+                  top: img.y * scale,
+                  width: img.displayWidth * scale,
+                  height: img.displayHeight * scale,
+                  transform: img.rotated ? 'rotate(90deg)' : 'none',
+                  transformOrigin: 'top left',
+                }}
+              >
+                <img
+                  src={img.preview}
+                  alt={img.file.name}
+                  className="h-full w-full object-cover"
+                  style={{ imageRendering: 'crisp-edges' }}
+                />
+                {padding > 0 && (
+                  <div
+                    className="pointer-events-none absolute inset-0 border-line-strong/60"
+                    style={{
+                      margin: -padding * scale,
+                      borderWidth: `${Math.max(1, padding * scale)}px`,
+                    }}
+                  />
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-        
-        {/* Canvas border */}
-        <div className="absolute inset-0 border-2 border-slate-400/50 dark:border-slate-500/50 pointer-events-none" />
-      </div>
-      
-      {/* Dimensions overlay */}
-      <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-        {canvasSize.width} × {canvasSize.height} px
+        </div>
+
+        {/* Readout */}
+        <div className="pointer-events-none sticky bottom-2 left-0 flex w-full justify-end px-2">
+          <span className="chip border-line bg-surface/90 text-fg backdrop-blur-md">
+            <span className="num">
+              {canvasSize.width} × {canvasSize.height} px
+            </span>
+            <span className="text-muted">·</span>
+            <span className="num">{packedImages.length} piezas</span>
+            <span className="text-muted">·</span>
+            <span className="num">{Math.round(scale * 100)}%</span>
+          </span>
+        </div>
       </div>
     </div>
   );

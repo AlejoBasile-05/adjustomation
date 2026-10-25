@@ -14,81 +14,90 @@ export function ImageList({ images, onRemove, onClear, isPacking }: ImageListPro
     return null;
   }
 
+  const totalArea = images.reduce((sum, img) => sum + img.area, 0);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-          Imágenes ({images.length})
-        </h3>
+    <div>
+      <div className="panel-head">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <ImageIcon className="h-4 w-4 text-accent" aria-hidden="true" />
+          Imágenes
+          <span className="chip">
+            <span className="num">{images.length}</span>
+          </span>
+        </h2>
         {images.length > 1 && (
           <button
+            type="button"
             onClick={onClear}
             disabled={isPacking}
-            className={cn(
-              'text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
-              'font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
+            className="btn btn-ghost px-2 py-1 text-xs hover:text-danger"
           >
             Limpiar todo
           </button>
         )}
       </div>
-      
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-h-64 overflow-y-auto p-1 pr-2">
-        {images.map((img) => (
-          <div
-            key={img.id}
-            className={cn(
-              'relative group bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700',
-              'overflow-hidden aspect-square shadow-sm hover:shadow-md transition-shadow'
-            )}
-          >
-            <img
-              src={img.preview}
-              alt={img.file.name}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-            
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => onRemove(img.id)}
-                disabled={isPacking}
-                className={cn(
-                  'w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center',
-                  'hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
-                aria-label={`Eliminar ${img.file.name}`}
-              >
-                <X className="w-4 h-4" aria-hidden="true" />
-              </button>
-            </div>
-            
-            <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent text-white text-xs">
-              <div className="flex items-center justify-between">
-                <span className="truncate max-w-[60px]">{img.file.name}</span>
-                <span className="flex items-center gap-1 text-[10px] opacity-90">
-                  <ImageIcon className="w-3 h-3" aria-hidden="true" />
+
+      <div className="animate-pop space-y-3 p-3">
+        <div className="scroll-thin grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4 xl:grid-cols-5">
+          {images.map((img) => (
+            <div
+              key={img.id}
+              className="group relative aspect-square overflow-hidden rounded-[10px] border border-line bg-raised"
+            >
+              <img
+                src={img.preview}
+                alt={img.file.name}
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                loading="lazy"
+              />
+
+              {/* Dimensions + name, always readable */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-1.5 pb-1 pt-4">
+                <p className="truncate text-[10px] leading-tight text-white/90">{img.file.name}</p>
+                <p className="num text-[10px] leading-tight text-white/65">
                   {img.width}×{img.height}
-                </span>
+                </p>
               </div>
-            </div>
-            
-            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+
+              {/* Aspect ratio, hover only, purely decorative */}
               {img.width !== img.height && (
-                <span className="px-1.5 py-0.5 bg-slate-900/80 text-[10px] rounded text-white">
+                <span className="num absolute right-1 top-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[9px] font-semibold text-white/85 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
                   {img.aspectRatio.toFixed(2)}
                 </span>
               )}
+
+              {/* Remove: reachable by mouse AND keyboard */}
+              <button
+                type="button"
+                onClick={() => onRemove(img.id)}
+                disabled={isPacking}
+                className={cn(
+                  'absolute left-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-danger text-white',
+                  'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                  'focus-visible:opacity-100 hover:brightness-110',
+                  'disabled:cursor-not-allowed disabled:opacity-40'
+                )}
+                aria-label={`Eliminar ${img.file.name}`}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
             </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="stat-tile">
+            <p className="num text-sm font-semibold text-fg">{totalArea.toLocaleString()}</p>
+            <p className="eyebrow">Área total px²</p>
           </div>
-        ))}
-      </div>
-      
-      <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">
-        Total: {images.reduce((sum, img) => sum + img.area, 0).toLocaleString()} px²
-        {' | '}
-        Promedio: {Math.round(images.reduce((sum, img) => sum + img.area, 0) / images.length).toLocaleString()} px²
+          <div className="stat-tile">
+            <p className="num text-sm font-semibold text-fg-soft">
+              {Math.round(totalArea / images.length).toLocaleString()}
+            </p>
+            <p className="eyebrow">Promedio px²</p>
+          </div>
+        </div>
       </div>
     </div>
   );

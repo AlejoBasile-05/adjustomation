@@ -1,5 +1,5 @@
 import { cn } from '../utils/cn';
-import { RotateCw, Minus, Plus, Grid, Layers, Sparkles, Maximize2 } from 'lucide-react';
+import { Minus, Plus, Grid, Layers, Sparkles, Maximize2 } from 'lucide-react';
 import type { PackingOptions, SortingStrategy, CanvasSize } from '../types';
 
 interface SettingsPanelProps {
@@ -12,51 +12,51 @@ interface SettingsPanelProps {
 }
 
 const sortingStrategies: { value: SortingStrategy; label: string; description: string; icon: React.ReactNode }[] = [
-  { 
-    value: 'area-desc', 
-    label: 'Área descendente', 
+  {
+    value: 'area-desc',
+    label: 'Área descendente',
     description: 'Más grandes primero (recomendado)',
     icon: <Layers className="w-4 h-4" />
   },
-  { 
-    value: 'max-side-desc', 
-    label: 'Lado mayor descendente', 
+  {
+    value: 'max-side-desc',
+    label: 'Lado mayor descendente',
     description: 'Prioriza el lado más largo',
     icon: <Maximize2 className="w-4 h-4" />
   },
-  { 
-    value: 'width-desc', 
-    label: 'Ancho descendente', 
+  {
+    value: 'width-desc',
+    label: 'Ancho descendente',
     description: 'Más anchas primero',
     icon: <Minus className="w-4 h-4" />
   },
-  { 
-    value: 'height-desc', 
-    label: 'Alto descendente', 
+  {
+    value: 'height-desc',
+    label: 'Alto descendente',
     description: 'Más altas primero',
     icon: <Plus className="w-4 h-4" />
   },
-  { 
-    value: 'aspect-ratio', 
-    label: 'Por aspect ratio', 
+  {
+    value: 'aspect-ratio',
+    label: 'Por aspect ratio',
     description: 'Agrupa formas similares',
     icon: <Grid className="w-4 h-4" />
   },
-  { 
-    value: 'area-asc', 
-    label: 'Área ascendente', 
+  {
+    value: 'area-asc',
+    label: 'Área ascendente',
     description: 'Más pequeñas primero',
     icon: <Sparkles className="w-4 h-4" />
   },
 ];
 
-export function SettingsPanel({ 
-  options, 
-  onOptionChange, 
-  onCanvasSizeChange, 
+export function SettingsPanel({
+  options,
+  onOptionChange,
+  onCanvasSizeChange,
   isPacking,
   packedCount,
-  totalImages 
+  totalImages
 }: SettingsPanelProps) {
   const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = Math.max(100, Math.min(5000, parseInt(e.target.value) || 100));
@@ -69,168 +69,173 @@ export function SettingsPanel({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-6">
+    <div className="p-4 space-y-5">
       {/* Canvas Size */}
       <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-          Tamaño del lienzo
-        </label>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="mb-2 flex items-baseline justify-between">
+          <span className="eyebrow">Tamaño del lienzo</span>
+          <span className="num text-[11px] text-muted">
+            {(options.canvasSize.width * options.canvasSize.height).toLocaleString()} px²
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Ancho (px)</label>
-            <input
-              type="number"
-              value={options.canvasSize.width}
-              onChange={handleWidthChange}
-              disabled={isPacking}
-              className={cn(
-                'w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg',
-                'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100',
-                'focus:ring-2 focus:ring-primary-500 focus:border-transparent',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-                'text-sm'
-              )}
-              min={100}
-              max={5000}
-            />
+            <label htmlFor="canvas-width" className="mb-1 block text-[10px] text-muted">
+              Ancho
+            </label>
+            <div className="relative">
+              <input
+                id="canvas-width"
+                type="number"
+                value={options.canvasSize.width}
+                onChange={handleWidthChange}
+                disabled={isPacking}
+                className="field pr-7"
+                min={100}
+                max={5000}
+                aria-label="Ancho del lienzo en píxeles"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted">
+                px
+              </span>
+            </div>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Alto (px)</label>
-            <input
-              type="number"
-              value={options.canvasSize.height}
-              onChange={handleHeightChange}
-              disabled={isPacking}
-              className={cn(
-                'w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg',
-                'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100',
-                'focus:ring-2 focus:ring-primary-500 focus:border-transparent',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-                'text-sm'
-              )}
-              min={100}
-              max={5000}
-            />
+            <label htmlFor="canvas-height" className="mb-1 block text-[10px] text-muted">
+              Alto
+            </label>
+            <div className="relative">
+              <input
+                id="canvas-height"
+                type="number"
+                value={options.canvasSize.height}
+                onChange={handleHeightChange}
+                disabled={isPacking}
+                className="field pr-7"
+                min={100}
+                max={5000}
+                aria-label="Alto del lienzo en píxeles"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted">
+                px
+              </span>
+            </div>
           </div>
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 text-center">
-          Área: {(options.canvasSize.width * options.canvasSize.height).toLocaleString()} px²
+        <p className="mt-2 text-[10px] leading-relaxed text-muted">
+          Se ajusta automáticamente al cargar imágenes; puedes fijarlo a mano.
         </p>
       </div>
 
-      <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-          Estrategia de ordenamiento
-        </label>
-        <div className="grid grid-cols-2 gap-2">
+      <div className="border-t border-line pt-4">
+        <span className="eyebrow">Estrategia de ordenamiento</span>
+        <div className="mt-2 grid grid-cols-2 gap-2">
           {sortingStrategies.map((strategy) => (
             <button
               key={strategy.value}
+              type="button"
               onClick={() => onOptionChange('sortingStrategy', strategy.value)}
               disabled={isPacking}
+              aria-pressed={options.sortingStrategy === strategy.value}
               className={cn(
-                'relative p-3 rounded-lg border-2 text-left transition-all',
-                'hover:border-primary-400 dark:hover:border-primary-500',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
+                'rounded-control border p-2.5 text-left transition-colors',
+                'disabled:cursor-not-allowed disabled:opacity-50',
                 options.sortingStrategy === strategy.value
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                  ? 'border-accent bg-accent-soft'
+                  : 'border-line bg-raised hover:border-line-strong'
               )}
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className={cn(
-                  'w-8 h-8 rounded-lg flex items-center justify-center',
-                  options.sortingStrategy === strategy.value
-                    ? 'bg-primary-500 text-white'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-500'
-                )}>
+              <div className="mb-1 flex items-center gap-2">
+                <span
+                  className={cn(
+                    'grid h-7 w-7 shrink-0 place-items-center rounded-[8px]',
+                    options.sortingStrategy === strategy.value
+                      ? 'bg-accent text-accent-fg'
+                      : 'bg-sunken text-muted'
+                  )}
+                >
                   {strategy.icon}
                 </span>
-                <span className={cn(
-                  'text-sm font-medium',
-                  options.sortingStrategy === strategy.value
-                    ? 'text-primary-700 dark:text-primary-300'
-                    : 'text-slate-700 dark:text-slate-300'
-                )}>
+                <span
+                  className={cn(
+                    'truncate text-xs font-semibold',
+                    options.sortingStrategy === strategy.value ? 'text-fg' : 'text-fg-soft'
+                  )}
+                >
                   {strategy.label}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 ml-10">
-                {strategy.description}
-              </p>
+              <p className="text-[10px] leading-snug text-muted">{strategy.description}</p>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-          <RotateCw className="w-4 h-4 text-slate-500" />
-          Opciones de empaquetado
-        </label>
-        <div className="space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={options.allowRotation}
-              onChange={(e) => onOptionChange('allowRotation', e.target.checked)}
-              disabled={isPacking}
-              className={cn(
-                'w-4 h-4 rounded border-slate-300 text-primary-600',
-                'focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            />
-            <span className="text-sm text-slate-700 dark:text-slate-300">
-              Permitir rotación (90°)
+      <div className="border-t border-line pt-4">
+        <span className="eyebrow">Opciones de empaquetado</span>
+        <div className="mt-2 space-y-3">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-control border border-line bg-raised px-3 py-2.5">
+            <span className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={options.allowRotation}
+                onChange={(e) => onOptionChange('allowRotation', e.target.checked)}
+                disabled={isPacking}
+                className={cn(
+                  'h-4 w-4 rounded accent-[var(--app-accent)]',
+                  'disabled:cursor-not-allowed disabled:opacity-50'
+                )}
+              />
+              <span className="text-sm text-fg">Permitir rotación (90°)</span>
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400 ml-auto">
-              Mejora el aprovechamiento
-            </span>
+            <span className="hidden text-[10px] text-muted sm:block">Mejora el aprovechamiento</span>
           </label>
-          
+
           <div>
-            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
-              Espaciado entre imágenes: {options.padding}px
-            </label>
+            <div className="mb-1 flex items-center justify-between">
+              <label htmlFor="canvas-padding" className="text-[10px] text-muted">
+                Espaciado
+              </label>
+              <span className="chip">
+                <span className="num">{options.padding}</span> px
+              </span>
+            </div>
             <input
+              id="canvas-padding"
               type="range"
               min={0}
               max={50}
               value={options.padding}
               onChange={(e) => onOptionChange('padding', parseInt(e.target.value))}
               disabled={isPacking}
-              className={cn(
-                'w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer',
-                'accent-primary-600',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
+              className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Espaciado entre imágenes en píxeles"
             />
+            <div className="flex justify-between">
+              <span className="num text-[10px] text-muted">0</span>
+              <span className="num text-[10px] text-muted">50</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Quick stats */}
-      {totalImages && totalImages > 0 && (
-        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {totalImages}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Total</p>
+      {typeof totalImages === 'number' && totalImages > 0 && (
+        <div className="border-t border-line pt-4">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="stat-tile">
+              <p className="num text-base font-semibold text-fg">{totalImages}</p>
+              <p className="eyebrow">Total</p>
             </div>
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">
-                {packedCount || 0}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Empaquetadas</p>
+            <div className="stat-tile">
+              <p className="num text-base font-semibold text-accent">{packedCount || 0}</p>
+              <p className="eyebrow">Dentro</p>
             </div>
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <div className="stat-tile">
+              <p className="num text-base font-semibold text-fg-soft">
                 {totalImages - (packedCount || 0)}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Pendientes</p>
+              <p className="eyebrow">Pendientes</p>
             </div>
           </div>
         </div>

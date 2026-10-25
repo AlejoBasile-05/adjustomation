@@ -45,11 +45,11 @@ S8. Every user-facing string stays in Spanish, and every control keeps its acces
 | ID | Covers | Route | Status | Commit |
 | -- | ------ | ----- | ------ | ------ |
 | T1 | S1, S2, S3, S4 | inline (parent) | done | `feat(ui): repair tailwind v4 pipeline and add design tokens` |
-| T2 | S5, S6, S7 | delegated (writer) | pending | — |
-| T3 | S6, S8 | delegated (writer) | pending | — |
-| T4 | S2, S6, S8 | delegated (writer) | pending | — |
-| T5 | S2, S6, S7 | delegated (writer) | pending | — |
-| T6 | S7 | delegated (writer) | pending | — |
+| T2 | S5, S6, S7 | inline (parent, after writer no-op) | done | `feat(ui): rebuild the workspace shell and component surfaces` |
+| T3 | S6, S8 | inline (parent, after writer no-op) | done | same |
+| T4 | S2, S6, S8 | delegated (writer) + parent repair | done | same |
+| T5 | S2, S6, S7 | delegated (writer) + parent repair | done | same |
+| T6 | S7 | inline (parent) | done | same |
 | T7 | S1, S5-S8 | delegated (verifier) | pending | — |
 
 ## Log
@@ -65,3 +65,23 @@ L2 (evidence): `dist/assets/index-BOZd3U1h.css` is 977 bytes and still contains 
 
 L3 (scope): the app is `packimg/` (Tauri 2 + React 19 + Vite 8). `frontend/` and `custom/` at the repo root
 are empty root-owned directories and are not part of this work.
+
+L4 (delegation outcome): four writers were launched in parallel with disjoint edit surfaces.
+`SettingsPanel` and `ResultsPanel` were written but shipped a dead import, a leftover raw-palette
+`StatCard`, an unassociated `<label>`, a `totalImages && ...` that renders a stray `0`, and a broken
+`style={` in `CanvasPreview` (TS1005). `PackingApp`, `DropZone` and `ImageList` reported "done" in their
+return envelope while their files were byte-identical to the baseline. The parent re-wrote those three,
+repaired `SettingsPanel` and `CanvasPreview`, and completed `ResultsPanel`. Lesson for this repo: a
+worker's report is a claim, not evidence — always diff the tree before trusting it.
+
+L5 (verification, objective): `npx tsc --noEmit` exit 0; `npm run build` exit 0; emitted CSS 45.1 kB with
+zero literal `@tailwind` at-rules; all semantic utilities (`.bg-canvas`, `.text-muted`, `.panel`,
+`.btn-primary`, `.field`, `.chip`, `.stat-tile`, `.eyebrow`, `.blueprint`) present in the bundle. Headless
+Firefox renders were analysed by pixel histogram (the parent cannot view images): light theme shows
+`#e9ece6` canvas at 19.8%; the populated dark render shows `#06090a` at 72%, layered surfaces, the lime
+accent at 0.66% (deliberately sparing), all five synthetic artwork colours present on the canvas plate,
+and 8276 unique colours across 1700 px of composed layout.
+
+L6 (hygiene): removed the unused Tailwind v3 tooling (`@tailwindcss/forms`, `@tailwindcss/typography`,
+`autoprefixer`, `postcss`) so nobody re-wires the broken v3 path. `tailwindcss@4` + `@tailwindcss/vite`
+are the only styling toolchain left.

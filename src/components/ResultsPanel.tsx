@@ -1,5 +1,5 @@
 import { cn } from '../utils/cn';
-import { Download, CheckCircle, AlertTriangle, Info, RotateCw, Expand } from 'lucide-react';
+import { Download, AlertTriangle, Sparkles, ChevronRight } from 'lucide-react';
 import type { PackingResult } from '../types';
 
 interface ResultsPanelProps {
@@ -8,149 +8,178 @@ interface ResultsPanelProps {
   isPacking?: boolean;
 }
 
+const TIPS = [
+  <>Usa <strong className="font-semibold text-fg-soft">Área descendente</strong> para la mayoría de casos</>,
+  <>Activa la <strong className="font-semibold text-fg-soft">rotación</strong> para ganar ~15-30% de aprovechamiento</>,
+  <>Reduce el <strong className="font-semibold text-fg-soft">espaciado</strong> si no necesitas márgenes</>,
+  <>Aumenta el <strong className="font-semibold text-fg-soft">lienzo</strong> si hay imágenes sin colocar</>,
+  <>Con imágenes muy dispares prueba <strong className="font-semibold text-fg-soft">Lado mayor descendente</strong></>,
+];
+
 export function ResultsPanel({ result, onDownload, isPacking }: ResultsPanelProps) {
   if (!result) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 text-center">
-        <Info className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-500 dark:text-slate-400">
-          Configura las opciones y haz clic en <strong className="text-slate-700 dark:text-slate-300">"Empaquetar"</strong> para ver los resultados
-        </p>
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+        <div className="grid h-12 w-12 place-items-center rounded-control border border-dashed border-line-strong bg-raised text-muted">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="space-y-1">
+          <p className="font-display text-sm font-semibold text-fg-soft">Sin resultados todavía</p>
+          <p className="max-w-[34ch] text-xs text-muted">
+            Configura el lienzo y pulsa <strong className="font-semibold text-fg-soft">Empaquetar</strong> para ver la eficiencia.
+          </p>
+        </div>
       </div>
     );
   }
 
   const { stats, efficiency, unusedImages, canvasSize } = result;
-  const isEfficient = efficiency >= 70;
-  const isModerate = efficiency >= 50;
+  const tier = efficiency >= 70 ? 'ok' : efficiency >= 50 ? 'warn' : 'danger';
+  const usedPercent = stats.canvasArea > 0 ? (stats.usedArea / stats.canvasArea) * 100 : 0;
+
+  const verdict =
+    tier === 'ok'
+      ? 'Excelente aprovechamiento'
+      : tier === 'warn'
+        ? 'Aprovechamiento aceptable'
+        : 'Espacio desaprovechado';
+
+  const circumference = 2 * Math.PI * 50;
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-4">
-      {/* Efficiency Header */}
-      <div className={cn(
-        'rounded-xl p-4 text-center',
-        isEfficient ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
-        isModerate ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800' :
-        'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-      )}>
-        <div className="flex items-center justify-center gap-2 mb-2">
-          {isEfficient ? (
-            <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
-          ) : isModerate ? (
-            <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
-          ) : (
-            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-          )}
-          <span className={cn(
-            'text-2xl font-bold',
-            isEfficient ? 'text-green-700 dark:text-green-300' :
-            isModerate ? 'text-yellow-700 dark:text-yellow-300' :
-            'text-red-700 dark:text-red-300'
-          )}>
-            {efficiency.toFixed(1)}%
-          </span>
+    <div className="space-y-4 p-4">
+      {/* Efficiency gauge */}
+      <div className="flex items-center gap-4">
+        <div className="relative h-[104px] w-[104px] shrink-0">
+          <svg viewBox="0 0 112 112" className="h-full w-full" aria-hidden="true">
+            <circle
+              cx="56"
+              cy="56"
+              r="50"
+              fill="none"
+              stroke="var(--app-line-strong)"
+              strokeWidth="7"
+            />
+            <circle
+              cx="56"
+              cy="56"
+              r="50"
+              fill="none"
+              stroke={
+                tier === 'ok' ? 'var(--app-ok)' : tier === 'warn' ? 'var(--app-warn)' : 'var(--app-danger)'
+              }
+              strokeWidth="7"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference - (Math.min(efficiency, 100) / 100) * circumference}
+              transform="rotate(-90 56 56)"
+              style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="num text-xl font-semibold leading-none text-fg">
+              {efficiency.toFixed(1)}%
+            </span>
+            <span className="eyebrow mt-1 text-[9px]">Eficiencia</span>
+          </div>
         </div>
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          Eficiencia de empaquetado
-        </p>
+
+        <div className="min-w-0 space-y-1">
+          <p
+            className={cn(
+              'text-sm font-semibold leading-snug',
+              tier === 'ok' ? 'text-ok' : tier === 'warn' ? 'text-warn' : 'text-danger'
+            )}
+          >
+            {verdict}
+          </p>
+          <p className="text-xs leading-relaxed text-muted">
+            de <span className="num text-fg-soft">{stats.canvasArea.toLocaleString()}</span> px² disponibles
+          </p>
+          <p className="num text-[11px] text-muted">
+            {stats.packedCount} de {stats.totalImages} piezas colocadas
+          </p>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard
-          label="Imágenes colocadas"
-          value={stats.packedCount}
-          icon={<CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />}
-        />
-        <StatCard
-          label="Sin colocar"
-          value={stats.unpackedCount}
-          icon={<AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />}
-        />
-        <StatCard
-          label="Área usada"
-          value={`${((stats.usedArea / stats.canvasArea) * 100).toFixed(1)}%`}
-          icon={<Expand className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
-        />
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="stat-tile">
+          <p className="num text-base font-semibold text-accent">{stats.packedCount}</p>
+          <p className="eyebrow">Colocadas</p>
+        </div>
+        <div className="stat-tile">
+          <p
+            className={cn(
+              'num text-base font-semibold',
+              stats.unpackedCount > 0 ? 'text-danger' : 'text-muted'
+            )}
+          >
+            {stats.unpackedCount}
+          </p>
+          <p className="eyebrow">Fuera</p>
+        </div>
+        <div className="stat-tile">
+          <p className="num text-base font-semibold text-fg">{usedPercent.toFixed(1)}%</p>
+          <p className="eyebrow">Área usada</p>
+        </div>
       </div>
 
-      {/* Canvas Info */}
-      <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+      {/* Canvas readout */}
+      <div className="grid grid-cols-2 gap-3 rounded-control border border-line bg-sunken px-3 py-2.5">
         <div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Lienzo</p>
-          <p className="font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
+          <p className="eyebrow">Lienzo</p>
+          <p className="num text-sm text-fg">
             {canvasSize.width} × {canvasSize.height}
           </p>
         </div>
         <div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Área total</p>
-          <p className="font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
-            {stats.canvasArea.toLocaleString()} px²
-          </p>
+          <p className="eyebrow">Área</p>
+          <p className="num text-sm text-fg">{stats.canvasArea.toLocaleString()} px²</p>
         </div>
       </div>
 
-      {/* Unpacked images warning */}
+      {/* Unpacked warning */}
       {unusedImages.length > 0 && (
-        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                {unusedImages.length} imagen{unusedImages.length !== 1 ? 'es' : ''} no cabieron
-              </p>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                Aumenta el tamaño del lienzo o reduce el espaciado para incluirlas.
-              </p>
-            </div>
+        <div className="flex items-start gap-2.5 rounded-control border border-warn/40 bg-warn-soft px-3 py-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-warn">
+              {unusedImages.length} imagen{unusedImages.length !== 1 ? 'es' : ''} no caben
+            </p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-warn/90">
+              Aumenta el tamaño del lienzo o reduce el espaciado para incluirlas.
+            </p>
           </div>
         </div>
       )}
 
-      {/* Download button */}
+      {/* Download */}
       <button
+        type="button"
         onClick={onDownload}
         disabled={isPacking || stats.packedCount === 0}
-        className={cn(
-          'w-full py-3 px-4 rounded-lg font-medium transition-all',
-          'flex items-center justify-center gap-2',
-          stats.packedCount > 0
-            ? 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800'
-            : 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-600 dark:text-slate-400'
-        )}
+        className="btn btn-primary w-full gap-2 py-2.5"
       >
-        <Download className="w-5 h-5" />
+        <Download className="h-4 w-4" aria-hidden="true" />
         Descargar resultado (PNG)
       </button>
 
       {/* Tips */}
-      <details className="group">
-        <summary className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 cursor-pointer">
-          <span className="transition-transform group-open:rotate-90">
-            <RotateCw className="w-4 h-4" />
-          </span>
+      <details className="group border-t border-line pt-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-muted transition-colors hover:text-fg">
+          <ChevronRight
+            className="h-3.5 w-3.5 transition-transform group-open:rotate-90"
+            aria-hidden="true"
+          />
           Consejos para mejor empaquetado
         </summary>
-        <ul className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-400 pl-6 list-disc">
-          <li>Usa <strong>"Área descendente"</strong> para la mayoría de casos</li>
-          <li>Activa <strong>rotación</strong> para mejorar aprovechamiento ~15-30%</li>
-          <li>Reduce el <strong>espaciado</strong> si no necesitas márgenes</li>
-          <li>Aumenta el lienzo si hay imágenes sin colocar</li>
-          <li>Para imágenes muy diferentes, prueba <strong>"Lado mayor descendente"</strong></li>
+        <ul className="mt-2.5 list-disc space-y-1.5 pl-4 text-[11px] leading-relaxed text-muted">
+          {TIPS.map((tip, index) => (
+            <li key={index}>{tip}</li>
+          ))}
         </ul>
       </details>
-    </div>
-  );
-}
-
-function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
-  return (
-    <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-center">
-      <div className="flex items-center justify-center gap-1 mb-1">
-        {icon}
-      </div>
-      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
     </div>
   );
 }

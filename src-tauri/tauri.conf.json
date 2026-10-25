@@ -44,7 +44,7 @@
       "icons/icon.ico"
     ],
     "copyright": "© 2025 Gustavo Automatización",
-    "category": "Graphics",
+    "category": "Graphics and Design",
     "shortDescription": "Empaquetado inteligente y eficiente de imágenes",
     "longDescription": "PackImg permite empaquetar múltiples imágenes en un lienzo de la manera más eficiente posible usando el algoritmo MaxRects. Ideal para crear atlases de texturas, spritesheets, o simplemente optimizar el espacio de almacenamiento.",
     "license": "MIT"

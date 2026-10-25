@@ -54,7 +54,23 @@
     "windows": {
       "certificateThumbprint": "",
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installerHeaderIcon": "icons/icon.ico",
+        "allowToChangeInstallDirectory": true,
+        "oneClick": false,
+        "perMachine": false,
+        "displayLanguageSelector": false,
+        "createDesktopShortcut": "always",
+        "createStartMenuShortcut": true,
+        "shortcutName": "PackImg",
+        "licenseFile": "",
+        "runAfterFinish": true
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
     },
     "macOS": {
       "frameworks": [],
@@ -62,11 +78,22 @@
       "exceptionDomain": "",
       "signingIdentity": null,
       "entitlements": null,
-      "providerShortName": null
+      "providerShortName": null,
+      "bundleIdentifier": "com.gustavo.packimg",
+      "appStore": false,
+      "dmg": {
+        "window": {
+          "width": 500,
+          "height": 300
+        },
+        "background": "icons/dmg-background.png"
+      }
     },
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "librsvg2-2"]
+        "depends": ["libwebkit2gtk-4.1-0", "librsvg2-2"],
+        "section": "graphics",
+        "priority": "optional"
       },
       "appimage": {
         "bundleMediaFramework": false

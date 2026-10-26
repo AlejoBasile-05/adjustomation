@@ -50,7 +50,7 @@ S8. Every user-facing string stays in Spanish, and every control keeps its acces
 | T4 | S2, S6, S8 | delegated (writer) + parent repair | done | same |
 | T5 | S2, S6, S7 | delegated (writer) + parent repair | done | same |
 | T6 | S7 | inline (parent) | done | same |
-| T7 | S1, S5-S8 | delegated (verifier) | pending | — |
+| T7 | S1, S5-S8 | delegated (verifier) — UNAVAILABLE, probes run by parent | done | `docs(odd): record verification evidence` |
 
 ## Log
 
@@ -85,3 +85,25 @@ and 8276 unique colours across 1700 px of composed layout.
 L6 (hygiene): removed the unused Tailwind v3 tooling (`@tailwindcss/forms`, `@tailwindcss/typography`,
 `autoprefixer`, `postcss`) so nobody re-wires the broken v3 path. `tailwindcss@4` + `@tailwindcss/vite`
 are the only styling toolchain left.
+
+L7 (verifier unavailable): the independent verifier could not run. The delegated runtime returned
+provider errors, not a verification result: `402 Insufficient Balance` (deepseek), `413 Request too large`
+(groq, 19271 tokens vs an 8000 TPM cap) and `404 model_not_found` (nvidia). Per the provider-defect
+boundary this is a model-provider failure, so no defect handoff applies. The parent therefore ran the
+probe set itself and reports it as self-verification, not as an independent pass:
+- `npx tsc --noEmit`: exit 0
+- `npm run build`: exit 0, CSS 45.13 kB, zero literal `@tailwind` at-rules
+- `.bg-canvas .text-muted .border-line .panel .btn-primary .field .chip .stat-tile .eyebrow .blueprint`:
+  all present in the emitted bundle
+- raw palette grep across `src/components` + `src/hooks`: 0 matches
+- `src/utils/` and `src/types/` diffs vs baseline: empty (packing logic and contracts untouched)
+- `dismissError`: declared in the hook interface, implemented, returned, destructured and bound to the
+  toast close button
+- `MAX_IMAGES`: guarded in the hook and in the DropZone disabled state
+- `index.html`: no external/CDN font link; theme bootstrap is inline and runs before the module entry
+
+Residual risk this change carries: no automated test suite exists in this repository, so the redesigned
+visuals and the hook behaviour changes are covered by build + static probes + pixel-histogram renders
+only. That is the accuracy limit of this verification.
+
+Risk: item 6 (no test would catch a regression in the changed behaviour; the repository has zero tests).

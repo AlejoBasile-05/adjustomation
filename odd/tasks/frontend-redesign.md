@@ -107,3 +107,11 @@ visuals and the hook behaviour changes are covered by build + static probes + pi
 only. That is the accuracy limit of this verification.
 
 Risk: item 6 (no test would catch a regression in the changed behaviour; the repository has zero tests).
+
+L8 (window-size probe): rendered the production build at the real Tauri window size (1280x800) and at the
+configured minimum (900x800). Both compose: every horizontal band contains non-trivial content, the canvas
+and surface tokens dominate, and there is no layout collapse. A first probe flagged a possible horizontal
+scrollbar at 900 px; it was a false positive - the "dominant uniform row" was plain `bg-canvas` background,
+and the pure-black column at the right edge is a headless-Firefox capture artifact present at both widths.
+No overflow defect. What pixel analysis cannot cover: overlapping or clipped content behind the sticky
+header, motion, hover/focus styling and the Tauri webview itself. Those need a human eye.

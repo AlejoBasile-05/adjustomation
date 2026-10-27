@@ -96,6 +96,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/portable/*.exe
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos-latest'

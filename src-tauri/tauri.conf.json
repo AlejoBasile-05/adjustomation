@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PackImg",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "identifier": "com.gustavo.packimg",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -51,14 +51,11 @@
     "windows": {
       "nsis": {
         "installMode": "perUser",
-        "allowToChangeInstallPath": true,
         "oneClick": false,
         "perMachine": false,
         "createDesktopShortcut": true,
         "createStartMenuShortcut": true,
-        "shortcutName": "PackImg",
-        "displayLanguageSelector": false,
-        "licenseFile": ""
+        "shortcutName": "PackImg"
       }
     }
   },

@@ -1,11 +1,14 @@
 import { cn } from '../utils/cn';
-import { Minus, Plus, Grid, Layers, Sparkles, Maximize2 } from 'lucide-react';
-import type { PackingOptions, SortingStrategy, CanvasSize } from '../types';
+import { Minus, Plus, Grid, Layers, Sparkles, Maximize2, LayoutGrid, Columns, Rows, Scissors, FileText } from 'lucide-react';
+import type { PackingOptions, SortingStrategy, CanvasSize, LayoutMode, UnitType } from '../types';
+import { roundCm, pxToCm, cmToPx, MIN_CANVAS_PX, MAX_CANVAS_PX, MIN_CANVAS_CM, MAX_CANVAS_CM } from '../utils/packing';
+import { useMemo } from 'react';
 
 interface SettingsPanelProps {
   options: PackingOptions;
   onOptionChange: <K extends keyof PackingOptions>(key: K, value: PackingOptions[K]) => void;
   onCanvasSizeChange: (size: CanvasSize) => void;
+  onUnitChange: (unit: UnitType) => void;
   isPacking?: boolean;
   packedCount?: number;
   totalImages?: number;
@@ -50,22 +53,113 @@ const sortingStrategies: { value: SortingStrategy; label: string; description: s
   },
 ];
 
+const layoutModes: { value: LayoutMode; label: string; description: string; icon: React.ReactNode }[] = [
+  {
+    value: 'mixed',
+    label: 'Fotos de diferente tamaño',
+    description: 'MaxRects automático (óptimo para mixtas)',
+    icon: <Layers className="w-4 h-4" />
+  },
+  {
+    value: 'uniform',
+    label: 'Fotos del mismo tamaño',
+    description: 'Grid uniforme (ideal para miniaturas)',
+    icon: <LayoutGrid className="w-4 h-4" />
+  },
+  {
+    value: 'columns',
+    label: 'Agrupación por columnas',
+    description: 'Columnas fijas, altura variable',
+    icon: <Columns className="w-4 h-4" />
+  },
+  {
+    value: 'rows',
+    label: 'Agrupación por filas',
+    description: 'Filas fijas, ancho variable',
+    icon: <Rows className="w-4 h-4" />
+  },
+  {
+    value: 'guillotine',
+    label: 'Algoritmo Guillotina',
+    description: 'Cortes guillotina (para cortes físicos)',
+    icon: <Scissors className="w-4 h-4" />
+  },
+  {
+    value: 'contact-sheet',
+    label: 'Hoja de contactos',
+    description: 'Grid uniforme con metadatos',
+    icon: <FileText className="w-4 h-4" />
+  },
+];
+
 export function SettingsPanel({
   options,
   onOptionChange,
   onCanvasSizeChange,
+  onUnitChange,
   isPacking,
   packedCount,
   totalImages
 }: SettingsPanelProps) {
+  const currentUnit = options.unit || 'px';
+  
+  const { displayWidth, displayHeight, displayArea, minValue, maxValue, stepValue } = useMemo(() => {
+    if (currentUnit === 'px') {
+      return {
+        displayWidth: options.canvasSize.width,
+        displayHeight: options.canvasSize.height,
+        displayArea: `${(options.canvasSize.width * options.canvasSize.height).toLocaleString()} px²`,
+        minValue: MIN_CANVAS_PX,
+        maxValue: MAX_CANVAS_PX,
+        stepValue: 1,
+      };
+    } else {
+      const widthCm = roundCm(pxToCm(options.canvasSize.width));
+      const heightCm = roundCm(pxToCm(options.canvasSize.height));
+      const areaCm = roundCm(pxToCm(Math.sqrt(options.canvasSize.width * options.canvasSize.height)));
+      return {
+        displayWidth: widthCm,
+        displayHeight: heightCm,
+        displayArea: `${areaCm} cm²`,
+        minValue: MIN_CANVAS_CM,
+        maxValue: MAX_CANVAS_CM,
+        stepValue: 0.1,
+      };
+    }
+  }, [currentUnit, options.canvasSize.width, options.canvasSize.height]);
+
   const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Math.max(100, Math.min(5000, parseInt(e.target.value) || 100));
+    const rawValue = parseFloat(e.target.value);
+    if (isNaN(rawValue)) return;
+    
+    let value: number;
+    if (currentUnit === 'px') {
+      value = Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, Math.round(rawValue)));
+    } else {
+      // Convert cm to px internally
+      value = Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, Math.round(cmToPx(rawValue))));
+    }
     onCanvasSizeChange({ ...options.canvasSize, width: value });
   };
 
   const handleHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Math.max(100, Math.min(5000, parseInt(e.target.value) || 100));
+    const rawValue = parseFloat(e.target.value);
+    if (isNaN(rawValue)) return;
+    
+    let value: number;
+    if (currentUnit === 'px') {
+      value = Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, Math.round(rawValue)));
+    } else {
+      // Convert cm to px internally
+      value = Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, Math.round(cmToPx(rawValue))));
+    }
     onCanvasSizeChange({ ...options.canvasSize, height: value });
+  };
+
+  const handleUnitChange = (newUnit: UnitType) => {
+    if (newUnit !== currentUnit) {
+      onUnitChange(newUnit);
+    }
   };
 
   return (
@@ -75,56 +169,139 @@ export function SettingsPanel({
         <div className="mb-2 flex items-baseline justify-between">
           <span className="eyebrow">Tamaño del lienzo</span>
           <span className="num text-[11px] text-muted">
-            {(options.canvasSize.width * options.canvasSize.height).toLocaleString()} px²
+            {displayArea}
           </span>
         </div>
+        
+        {/* Unit Toggle */}
+        <div className="mb-2 flex gap-1">
+          <button
+            type="button"
+            onClick={() => handleUnitChange('px')}
+            disabled={isPacking}
+            aria-pressed={currentUnit === 'px'}
+            className={cn(
+              'flex-1 rounded-control border px-2 py-1.5 text-xs font-medium transition-colors',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              currentUnit === 'px'
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-line bg-raised hover:border-line-strong text-fg-soft'
+            )}
+          >
+            px
+          </button>
+          <button
+            type="button"
+            onClick={() => handleUnitChange('cm')}
+            disabled={isPacking}
+            aria-pressed={currentUnit === 'cm'}
+            className={cn(
+              'flex-1 rounded-control border px-2 py-1.5 text-xs font-medium transition-colors',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              currentUnit === 'cm'
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-line bg-raised hover:border-line-strong text-fg-soft'
+            )}
+          >
+            cm
+          </button>
+        </div>
+        
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label htmlFor="canvas-width" className="mb-1 block text-[10px] text-muted">
-              Ancho
+              Ancho ({currentUnit})
             </label>
             <div className="relative">
               <input
                 id="canvas-width"
                 type="number"
-                value={options.canvasSize.width}
+                value={displayWidth}
                 onChange={handleWidthChange}
                 disabled={isPacking}
                 className="field pr-7"
-                min={100}
-                max={5000}
-                aria-label="Ancho del lienzo en píxeles"
+                min={minValue}
+                max={maxValue}
+                step={stepValue}
+                aria-label={`Ancho del lienzo en ${currentUnit === 'px' ? 'píxeles' : 'centímetros'}`}
               />
               <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted">
-                px
+                {currentUnit}
               </span>
             </div>
           </div>
           <div>
             <label htmlFor="canvas-height" className="mb-1 block text-[10px] text-muted">
-              Alto
+              Alto ({currentUnit})
             </label>
             <div className="relative">
               <input
                 id="canvas-height"
                 type="number"
-                value={options.canvasSize.height}
+                value={displayHeight}
                 onChange={handleHeightChange}
                 disabled={isPacking}
                 className="field pr-7"
-                min={100}
-                max={5000}
-                aria-label="Alto del lienzo en píxeles"
+                min={minValue}
+                max={maxValue}
+                step={stepValue}
+                aria-label={`Alto del lienzo en ${currentUnit === 'px' ? 'píxeles' : 'centímetros'}`}
               />
               <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted">
-                px
+                {currentUnit}
               </span>
             </div>
           </div>
         </div>
         <p className="mt-2 text-[10px] leading-relaxed text-muted">
-          Se ajusta automáticamente al cargar imágenes; puedes fijarlo a mano.
+          {currentUnit === 'px'
+            ? 'Se ajusta automáticamente al cargar imágenes; puedes fijarlo a mano.'
+            : 'DPI fijo: 300. 1 pulgada = 2.54 cm. Se convierte automáticamente a píxeles.'}
         </p>
+      </div>
+
+      <div className="border-t border-line pt-4">
+        <span className="eyebrow">Modo de empaquetado</span>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {layoutModes.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              onClick={() => onOptionChange('layoutMode', mode.value)}
+              disabled={isPacking}
+              aria-pressed={options.layoutMode === mode.value}
+              className={cn(
+                'rounded-control border p-2.5 text-left transition-colors',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+                options.layoutMode === mode.value
+                  ? 'border-accent bg-accent-soft'
+                  : 'border-line bg-raised hover:border-line-strong'
+              )}
+            >
+              <div className="mb-1 flex items-center gap-2">
+                <span
+                  className={cn(
+                    'grid h-7 w-7 shrink-0 place-items-center rounded-[8px]',
+                    options.layoutMode === mode.value
+                      ? 'bg-accent text-accent-fg'
+                      : 'bg-sunken text-muted'
+                  )}
+                >
+                  {mode.icon}
+                </span>
+                <span
+                  className={cn(
+                    'truncate text-xs font-semibold',
+                    options.layoutMode === mode.value ? 'text-fg' : 'text-fg-soft'
+                  )}
+                >
+                  {mode.label}
+                </span>
+              </div>
+              <p className="text-[10px] leading-snug text-muted">{mode.description}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="border-t border-line pt-4">
@@ -191,10 +368,119 @@ export function SettingsPanel({
             <span className="hidden text-[10px] text-muted sm:block">Mejora el aprovechamiento</span>
           </label>
 
+          {/* Layout-specific options */}
+          {options.layoutMode === 'columns' && (
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label htmlFor="layout-columns" className="text-[10px] text-muted">
+                  Número de columnas
+                </label>
+                <span className="chip">
+                  <span className="num">{options.columns || 4}</span>
+                </span>
+              </div>
+              <input
+                id="layout-columns"
+                type="range"
+                min={1}
+                max={12}
+                value={options.columns || 4}
+                onChange={(e) => onOptionChange('columns', parseInt(e.target.value))}
+                disabled={isPacking}
+                className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Número de columnas"
+              />
+              <div className="flex justify-between">
+                <span className="num text-[10px] text-muted">1</span>
+                <span className="num text-[10px] text-muted">12</span>
+              </div>
+            </div>
+          )}
+
+          {options.layoutMode === 'rows' && (
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label htmlFor="layout-rows" className="text-[10px] text-muted">
+                  Número de filas
+                </label>
+                <span className="chip">
+                  <span className="num">{options.rows || 3}</span>
+                </span>
+              </div>
+              <input
+                id="layout-rows"
+                type="range"
+                min={1}
+                max={12}
+                value={options.rows || 3}
+                onChange={(e) => onOptionChange('rows', parseInt(e.target.value))}
+                disabled={isPacking}
+                className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Número de filas"
+              />
+              <div className="flex justify-between">
+                <span className="num text-[10px] text-muted">1</span>
+                <span className="num text-[10px] text-muted">12</span>
+              </div>
+            </div>
+          )}
+
+          {(['uniform', 'contact-sheet'].includes(options.layoutMode)) && (
+            <>
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label htmlFor="cell-padding" className="text-[10px] text-muted">
+                    Espaciado entre celdas
+                  </label>
+                  <span className="chip">
+                    <span className="num">{options.cellPadding || 4}</span> px
+                  </span>
+                </div>
+                <input
+                  id="cell-padding"
+                  type="range"
+                  min={0}
+                  max={50}
+                  value={options.cellPadding || 4}
+                  onChange={(e) => onOptionChange('cellPadding', parseInt(e.target.value))}
+                  disabled={isPacking}
+                  className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Espaciado entre celdas en píxeles"
+                />
+                <div className="flex justify-between">
+                  <span className="num text-[10px] text-muted">0</span>
+                  <span className="num text-[10px] text-muted">50</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label htmlFor="fit-mode" className="text-[10px] text-muted">
+                    Modo de ajuste
+                  </label>
+                  <span className="chip">
+                    {options.fitMode || 'contain'}
+                  </span>
+                </div>
+                <select
+                  id="fit-mode"
+                  value={options.fitMode || 'contain'}
+                  onChange={(e) => onOptionChange('fitMode', e.target.value as 'contain' | 'cover')}
+                  disabled={isPacking}
+                  className="w-full field text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Modo de ajuste de imagen en celda"
+                >
+                  <option value="contain">Contener (ver imagen completa)</option>
+                  <option value="cover">Cubrir (recortar para llenar)</option>
+                </select>
+              </div>
+            </>
+          )}
+
           <div>
             <div className="mb-1 flex items-center justify-between">
               <label htmlFor="canvas-padding" className="text-[10px] text-muted">
-                Espaciado
+                Espaciado (borde)
               </label>
               <span className="chip">
                 <span className="num">{options.padding}</span> px

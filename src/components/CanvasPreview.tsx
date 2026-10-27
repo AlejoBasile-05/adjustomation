@@ -7,6 +7,7 @@ interface CanvasPreviewProps {
   packedImages: PackedImage[];
   canvasSize: CanvasSize;
   padding: number;
+  fitMode?: 'contain' | 'cover';
   showGrid?: boolean;
   backgroundColor?: string;
 }
@@ -17,6 +18,7 @@ export function CanvasPreview({
   packedImages,
   canvasSize,
   padding,
+  fitMode = 'contain',
   showGrid = true,
   backgroundColor = '#ffffff',
 }: CanvasPreviewProps) {
@@ -140,12 +142,35 @@ export function CanvasPreview({
                   transformOrigin: 'top left',
                 }}
               >
-                <img
-                  src={img.preview}
-                  alt={img.file.name}
-                  className="h-full w-full object-cover"
-                  style={{ imageRendering: 'crisp-edges' }}
-                />
+                {fitMode === 'cover' && img.sourceRect ? (
+                  <canvas
+                    ref={(el) => {
+                      if (el) {
+                        const ctx = el.getContext('2d');
+                        if (ctx) {
+                          const image = new Image();
+                          image.onload = () => {
+                            const { sx, sy, sw, sh } = img.sourceRect!;
+                            ctx.drawImage(image, sx, sy, sw, sh, 0, 0, img.displayWidth, img.displayHeight);
+                          };
+                          image.src = img.preview;
+                        }
+                      }
+                    }}
+                    className="h-full w-full"
+                    width={img.displayWidth}
+                    height={img.displayHeight}
+                    style={{ imageRendering: 'crisp-edges' }}
+                  >
+                  </canvas>
+                ) : (
+                  <img
+                    src={img.preview}
+                    alt={img.file.name}
+                    className="h-full w-full object-cover"
+                    style={{ imageRendering: 'crisp-edges' }}
+                  />
+                )}
                 {padding > 0 && (
                   <div
                     className="pointer-events-none absolute inset-0 border-line-strong/60"

@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy } from '../types';
+import { UnitType, convertCanvasSize, MIN_CANVAS_PX, MAX_CANVAS_PX, revokeImageFileURLs } from '../utils/packing';
+import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy, LayoutMode } from '../types';
 import { createImageFile, packImages, calculateOptimalCanvasSize } from '../utils/packing';
+import { drawPackedCanvas } from '../utils/packing/export';
 
 export const MAX_IMAGES = 50;
 
@@ -20,20 +22,46 @@ interface UseImagePackerReturn {
   setCanvasSize: (size: CanvasSize) => void;
   setOption: <K extends keyof PackingOptions>(key: K, value: PackingOptions[K]) => void;
   setSortingStrategy: (strategy: SortingStrategy) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
   runPacking: () => Promise<void>;
   resetPacking: () => void;
   downloadResult: () => void;
   dismissError: () => void;
+  setUnit: (unit: UnitType) => void;
+}
+
+// Helper to get initial unit from localStorage
+function getInitialUnit(): UnitType {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('packimg-unit');
+    if (stored === 'px' || stored === 'cm') {
+      return stored;
+    }
+  }
+  return 'px';
+}
+
+// Helper to save unit to localStorage
+function saveUnitToStorage(unit: UnitType): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('packimg-unit', unit);
+  }
 }
 
 export function useImagePacker(): UseImagePackerReturn {
   const [images, setImages] = useState<ImageFile[]>([]);
   const [canvasSize, setCanvasSizeState] = useState<CanvasSize>({ width: 800, height: 600 });
   const [options, setOptions] = useState<PackingOptions>({
+    unit: getInitialUnit(),
     canvasSize: { width: 800, height: 600 },
     allowRotation: true,
     padding: 4,
     sortingStrategy: 'area-desc',
+    layoutMode: 'mixed',
+    columns: 4,
+    rows: 3,
+    cellPadding: 4,
+    fitMode: 'contain',
   });
   const [result, setResult] = useState<PackingResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -86,17 +114,34 @@ export function useImagePacker(): UseImagePackerReturn {
   }, []);
 
   const removeImage = useCallback((id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
+    setImages(prev => {
+      const removed = prev.filter(img => img.id === id);
+      const remaining = prev.filter(img => img.id !== id);
+      if (removed.length > 0) {
+        revokeImageFileURLs(removed);
+      }
+      return remaining;
+    });
     setResult(null);
   }, []);
 
   const clearImages = useCallback(() => {
-    setImages([]);
+    setImages(prev => {
+      if (prev.length > 0) {
+        revokeImageFileURLs(prev);
+      }
+      return [];
+    });
     setResult(null);
   }, []);
 
   const setCanvasSize = useCallback((size: CanvasSize) => {
-    setCanvasSizeState(size);
+    // Clamp values to valid range
+    const clampedSize: CanvasSize = {
+      width: Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, size.width)),
+      height: Math.max(MIN_CANVAS_PX, Math.min(MAX_CANVAS_PX, size.height)),
+    };
+    setCanvasSizeState(clampedSize);
     setResult(null);
   }, []);
 
@@ -107,6 +152,11 @@ export function useImagePacker(): UseImagePackerReturn {
 
   const setSortingStrategy = useCallback((strategy: SortingStrategy) => {
     setOptions(prev => ({ ...prev, sortingStrategy: strategy }));
+    setResult(null);
+  }, []);
+
+  const setLayoutMode = useCallback((mode: LayoutMode) => {
+    setOptions(prev => ({ ...prev, layoutMode: mode }));
     setResult(null);
   }, []);
 
@@ -136,45 +186,35 @@ export function useImagePacker(): UseImagePackerReturn {
     setResult(null);
   }, []);
 
-  const downloadResult = useCallback(() => {
+const downloadResult = useCallback(async () => {
     if (!result || result.packedImages.length === 0) return;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = result.canvasSize.width;
-    canvas.height = result.canvasSize.height;
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) return;
 
-    // Fill background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, result.canvasSize.width, result.canvasSize.height);
+    try {
+      const dataUrl = await drawPackedCanvas(
+        result.packedImages,
+        result.canvasSize,
+        '#ffffff'
+      );
 
-    // Draw each packed image
-    const drawPromises = result.packedImages.map(packedImg => {
-      return new Promise<void>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          ctx.save();
-          ctx.translate(packedImg.x + packedImg.displayWidth / 2, packedImg.y + packedImg.displayHeight / 2);
-          if (packedImg.rotated) {
-            ctx.rotate(Math.PI / 2);
-          }
-          ctx.drawImage(img, -packedImg.displayWidth / 2, -packedImg.displayHeight / 2, packedImg.displayWidth, packedImg.displayHeight);
-          ctx.restore();
-          resolve();
-        };
-        img.src = packedImg.preview;
-      });
-    });
-
-    Promise.all(drawPromises).then(() => {
       const link = document.createElement('a');
       link.download = `packed-images-${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = dataUrl;
       link.click();
-    });
+    } catch (error) {
+      console.error('Download error:', error);
+      setError(error instanceof Error ? `Error generating packed image: ${error.message}` : 'Error generating packed image');
+    }
   }, [result]);
+
+  const setUnit = useCallback((unit: UnitType) => {
+    const currentUnit = options.unit || 'px';
+    const newCanvasSize = convertCanvasSize(canvasSize, currentUnit, unit);
+
+    setCanvasSizeState(newCanvasSize);
+    setOptions(prev => ({ ...prev, unit }));
+    setResult(null);
+    saveUnitToStorage(unit);
+  }, [canvasSize, options.unit]);
 
   // Auto-calculate the optimal canvas size when the image *set* changes.
   // Keyed on the set signature (not on `result`), so a manual size edit or a pack
@@ -206,9 +246,11 @@ export function useImagePacker(): UseImagePackerReturn {
     setCanvasSize,
     setOption,
     setSortingStrategy,
+    setLayoutMode,
     runPacking,
     resetPacking,
     downloadResult,
+    setUnit,
     dismissError,
   };
 }

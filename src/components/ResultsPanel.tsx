@@ -1,6 +1,6 @@
 import { cn } from '../utils/cn';
-import { Download, AlertTriangle, Sparkles, ChevronRight } from 'lucide-react';
-import type { PackingResult } from '../types';
+import { Download, AlertTriangle, Sparkles, ChevronRight, LayoutGrid, Columns, Rows, Scissors, FileText, Layers } from 'lucide-react';
+import type { PackingResult, LayoutMode } from '../types';
 
 interface ResultsPanelProps {
   result: PackingResult | null;
@@ -15,6 +15,15 @@ const TIPS = [
   <>Aumenta el <strong className="font-semibold text-fg-soft">lienzo</strong> si hay imágenes sin colocar</>,
   <>Con imágenes muy dispares prueba <strong className="font-semibold text-fg-soft">Lado mayor descendente</strong></>,
 ];
+
+const layoutModeLabels: Record<LayoutMode, { label: string; icon: React.ReactNode; description: string }> = {
+  mixed: { label: 'Fotos de diferente tamaño', icon: <Layers className="w-3.5 h-3.5" />, description: 'MaxRects automático' },
+  uniform: { label: 'Fotos del mismo tamaño', icon: <LayoutGrid className="w-3.5 h-3.5" />, description: 'Grid uniforme' },
+  columns: { label: 'Agrupación por columnas', icon: <Columns className="w-3.5 h-3.5" />, description: 'Columnas fijas' },
+  rows: { label: 'Agrupación por filas', icon: <Rows className="w-3.5 h-3.5" />, description: 'Filas fijas' },
+  guillotine: { label: 'Algoritmo Guillotina', icon: <Scissors className="w-3.5 h-3.5" />, description: 'Cortes guillotina' },
+  'contact-sheet': { label: 'Hoja de contactos', icon: <FileText className="w-3.5 h-3.5" />, description: 'Grid con metadatos' },
+};
 
 export function ResultsPanel({ result, onDownload, isPacking }: ResultsPanelProps) {
   if (!result) {
@@ -33,7 +42,8 @@ export function ResultsPanel({ result, onDownload, isPacking }: ResultsPanelProp
     );
   }
 
-  const { stats, efficiency, unusedImages, canvasSize } = result;
+  const { stats, efficiency, unusedImages, canvasSize, layoutMode } = result;
+  const modeInfo = layoutModeLabels[layoutMode];
   const tier = efficiency >= 70 ? 'ok' : efficiency >= 50 ? 'warn' : 'danger';
   const usedPercent = stats.canvasArea > 0 ? (stats.usedArea / stats.canvasArea) * 100 : 0;
 
@@ -48,6 +58,17 @@ export function ResultsPanel({ result, onDownload, isPacking }: ResultsPanelProp
 
   return (
     <div className="space-y-4 p-4">
+      {/* Layout Mode Badge */}
+      <div className="flex items-center gap-2 rounded-control border border-accent/30 bg-accent-soft px-3 py-2">
+        <span className="grid h-7 w-7 place-items-center rounded-[8px] bg-accent text-accent-fg">
+          {modeInfo.icon}
+        </span>
+        <div>
+          <p className="text-xs font-semibold text-accent">{modeInfo.label}</p>
+          <p className="text-[10px] leading-snug text-accent/80">{modeInfo.description}</p>
+        </div>
+      </div>
+
       {/* Efficiency gauge */}
       <div className="flex items-center gap-4">
         <div className="relative h-[104px] w-[104px] shrink-0">

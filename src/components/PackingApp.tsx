@@ -268,6 +268,7 @@ export function PackingApp() {
                   packedImages={result?.packedImages ?? []}
                   canvasSize={result?.canvasSize ?? canvasSize}
                   padding={options.padding}
+                  fitMode={options.fitMode}
                 />
               </div>
             </section>
@@ -285,6 +286,7 @@ export function PackingApp() {
                   options={options}
                   onOptionChange={setOption}
                   onCanvasSizeChange={setCanvasSize}
+                  onUnitChange={(unit) => setOption('unit', unit)}
                   isPacking={isProcessing}
                   packedCount={result?.stats.packedCount}
                   totalImages={images.length}

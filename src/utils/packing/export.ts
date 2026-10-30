@@ -1,4 +1,4 @@
-import type { PackedImage, CanvasSize } from '../../types';
+import type { PackedImage, CanvasSize, PackedPage } from '../../types';
 
 /**
  * Draw packed images onto a canvas and return a data URL.
@@ -7,14 +7,13 @@ import type { PackedImage, CanvasSize } from '../../types';
 export async function drawPackedCanvas(
   packedImages: PackedImage[],
   canvasSize: CanvasSize,
-  backgroundColor: string = '#ffffff',
-  fitMode: 'contain' | 'cover' = 'contain'
+  backgroundColor: string = '#ffffff'
 ): Promise<string> {
   const canvas = document.createElement('canvas');
   canvas.width = canvasSize.width;
   canvas.height = canvasSize.height;
   const ctx = canvas.getContext('2d');
-  
+
   if (!ctx) {
     throw new Error('Failed to get canvas 2d context');
   }
@@ -29,7 +28,7 @@ export async function drawPackedCanvas(
       const img = new Image();
       // Allow cross-origin for blob URLs (though they're same-origin, this helps with some edge cases)
       img.crossOrigin = 'anonymous';
-      
+
       img.onload = () => {
         try {
           ctx.save();
@@ -37,26 +36,15 @@ export async function drawPackedCanvas(
           if (packedImg.rotated) {
             ctx.rotate(Math.PI / 2);
           }
-          
-          if (fitMode === 'cover' && packedImg.sourceRect) {
-            // Cover mode: draw with source rect cropping
-            const { sx, sy, sw, sh } = packedImg.sourceRect;
-            ctx.drawImage(
-              img,
-              sx, sy, sw, sh,  // source rect
-              -packedImg.displayWidth / 2, -packedImg.displayHeight / 2,
-              packedImg.displayWidth, packedImg.displayHeight
-            );
-          } else {
-            // Contain mode: draw full image
-            ctx.drawImage(
-              img,
-              -packedImg.displayWidth / 2,
-              -packedImg.displayHeight / 2,
-              packedImg.displayWidth,
-              packedImg.displayHeight
-            );
-          }
+
+          // Contain mode: draw full image
+          ctx.drawImage(
+            img,
+            -packedImg.displayWidth / 2,
+            -packedImg.displayHeight / 2,
+            packedImg.displayWidth,
+            packedImg.displayHeight
+          );
           ctx.restore();
           resolve();
         } catch (e) {
@@ -92,9 +80,56 @@ export function downloadDataUrl(dataUrl: string, filename: string): void {
 export async function downloadPackedCanvas(
   packedImages: PackedImage[],
   canvasSize: CanvasSize,
-  backgroundColor: string = '#ffffff',
-  fitMode: 'contain' | 'cover' = 'contain'
+  backgroundColor: string = '#ffffff'
 ): Promise<void> {
-  const dataUrl = await drawPackedCanvas(packedImages, canvasSize, backgroundColor, fitMode);
+  const dataUrl = await drawPackedCanvas(packedImages, canvasSize, backgroundColor);
   downloadDataUrl(dataUrl, `packed-images-${Date.now()}.png`);
+}
+
+/**
+ * Draw a single page to a data URL
+ */
+export async function drawPackedPage(
+  page: PackedPage,
+  backgroundColor: string = '#ffffff'
+): Promise<string> {
+  return drawPackedCanvas(page.images, page.canvasSize, backgroundColor);
+}
+
+/**
+ * Draw all pages to separate data URLs
+ */
+export async function drawAllPackedPages(
+  pages: PackedPage[],
+  backgroundColor: string = '#ffffff'
+): Promise<string[]> {
+  const dataUrls: string[] = [];
+  for (const page of pages) {
+    const dataUrl = await drawPackedPage(page, backgroundColor);
+    dataUrls.push(dataUrl);
+  }
+  return dataUrls;
+}
+
+/**
+ * Download all pages as separate files
+ */
+export async function downloadAllPackedPages(
+  pages: PackedPage[],
+  backgroundColor: string = '#ffffff',
+  baseFilename: string = 'packed-images'
+): Promise<void> {
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const dataUrl = await drawPackedPage(page, backgroundColor);
+    const filename = pages.length > 1 
+      ? `${baseFilename}-${i + 1}.png` 
+      : `${baseFilename}.png`;
+    downloadDataUrl(dataUrl, filename);
+
+    // Small delay to allow browser to process multiple downloads
+    if (i < pages.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
 }

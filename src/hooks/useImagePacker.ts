@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { UnitType, convertCanvasSize, MIN_CANVAS_PX, MAX_CANVAS_PX, revokeImageFileURLs } from '../utils/packing';
 import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy, LayoutMode } from '../types';
-import { createImageFile, packImages, calculateOptimalCanvasSize } from '../utils/packing';
-import { drawPackedCanvas } from '../utils/packing/export';
+import { createImageFile, packImages, packImagesMultiPage, calculateOptimalCanvasSize } from '../utils/packing';
+import { drawPackedCanvas, downloadAllPackedPages } from '../utils/packing/export';
 
 export const MAX_IMAGES = 50;
+export const DEFAULT_MAX_PAGES = 10;
 
 interface UseImagePackerReturn {
   // State
@@ -14,6 +15,10 @@ interface UseImagePackerReturn {
   result: PackingResult | null;
   isProcessing: boolean;
   error: string | null;
+  
+  // Multi-page state
+  useMultiPage: boolean;
+  maxPages: number;
   
   // Actions
   addImages: (files: File[]) => Promise<void>;
@@ -25,9 +30,11 @@ interface UseImagePackerReturn {
   setLayoutMode: (mode: LayoutMode) => void;
   runPacking: () => Promise<void>;
   resetPacking: () => void;
-  downloadResult: () => void;
+  downloadResult: () => Promise<void>;
   dismissError: () => void;
   setUnit: (unit: UnitType) => void;
+  setUseMultiPage: (use: boolean) => void;
+  setMaxPages: (pages: number) => void;
 }
 
 // Helper to get initial unit from localStorage
@@ -62,10 +69,16 @@ export function useImagePacker(): UseImagePackerReturn {
     rows: 3,
     cellPadding: 4,
     fitMode: 'contain',
+    useMultiPage: false,
+    maxPages: DEFAULT_MAX_PAGES,
   });
   const [result, setResult] = useState<PackingResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Multi-page state
+  const [useMultiPage, setUseMultiPageState] = useState(false);
+  const [maxPages, setMaxPagesState] = useState(DEFAULT_MAX_PAGES);
 
   // Mirror of `images` so async callbacks can read the current count without
   // re-creating themselves (and re-triggering every memoized child).
@@ -78,6 +91,11 @@ export function useImagePacker(): UseImagePackerReturn {
   useEffect(() => {
     setOptions(prev => ({ ...prev, canvasSize }));
   }, [canvasSize]);
+
+  // Sync multi-page options
+  useEffect(() => {
+    setOptions(prev => ({ ...prev, useMultiPage, maxPages }));
+  }, [useMultiPage, maxPages]);
 
   const addImages = useCallback(async (files: File[]) => {
     setError(null);
@@ -173,14 +191,19 @@ export function useImagePacker(): UseImagePackerReturn {
       // Use a small timeout to allow UI to update
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      const packingResult = packImages(images, options);
+      let packingResult: PackingResult;
+      if (useMultiPage) {
+        packingResult = packImagesMultiPage(images, options, maxPages);
+      } else {
+        packingResult = packImages(images, options);
+      }
       setResult(packingResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error durante el empaquetado');
     } finally {
       setIsProcessing(false);
     }
-  }, [images, options]);
+  }, [images, options, useMultiPage, maxPages]);
 
   const resetPacking = useCallback(() => {
     setResult(null);
@@ -190,16 +213,24 @@ const downloadResult = useCallback(async () => {
     if (!result || result.packedImages.length === 0) return;
 
     try {
-      const dataUrl = await drawPackedCanvas(
-        result.packedImages,
-        result.canvasSize,
-        '#ffffff'
-      );
+      if (result.isMultiPage && result.pages && result.pages.length > 0) {
+        await downloadAllPackedPages(
+          result.pages,
+          '#ffffff',
+          'packed-images'
+        );
+      } else {
+        const dataUrl = await drawPackedCanvas(
+          result.packedImages,
+          result.canvasSize,
+          '#ffffff'
+        );
 
-      const link = document.createElement('a');
-      link.download = `packed-images-${Date.now()}.png`;
-      link.href = dataUrl;
-      link.click();
+        const link = document.createElement('a');
+        link.download = `packed-images-${Date.now()}.png`;
+        link.href = dataUrl;
+        link.click();
+      }
     } catch (error) {
       console.error('Download error:', error);
       setError(error instanceof Error ? `Error generating packed image: ${error.message}` : 'Error generating packed image');
@@ -215,6 +246,16 @@ const downloadResult = useCallback(async () => {
     setResult(null);
     saveUnitToStorage(unit);
   }, [canvasSize, options.unit]);
+
+  const setUseMultiPage = useCallback((use: boolean) => {
+    setUseMultiPageState(use);
+    setResult(null);
+  }, []);
+
+  const setMaxPages = useCallback((pages: number) => {
+    setMaxPagesState(Math.max(1, Math.min(100, pages)));
+    setResult(null);
+  }, []);
 
   // Auto-calculate the optimal canvas size when the image *set* changes.
   // Keyed on the set signature (not on `result`), so a manual size edit or a pack
@@ -240,6 +281,8 @@ const downloadResult = useCallback(async () => {
     result,
     isProcessing,
     error,
+    useMultiPage,
+    maxPages,
     addImages,
     removeImage,
     clearImages,
@@ -252,5 +295,7 @@ const downloadResult = useCallback(async () => {
     downloadResult,
     setUnit,
     dismissError,
+    setUseMultiPage,
+    setMaxPages,
   };
 }

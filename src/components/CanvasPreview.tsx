@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Grid3x3, LayoutGrid, Maximize2, Scan } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Grid3x3, LayoutGrid, Maximize2, Scan, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../utils/cn';
-import type { PackedImage, CanvasSize } from '../types';
+import type { PackedImage, CanvasSize, PackedPage } from '../types';
 
 interface CanvasPreviewProps {
   packedImages: PackedImage[];
@@ -10,6 +10,11 @@ interface CanvasPreviewProps {
   fitMode?: 'contain' | 'cover';
   showGrid?: boolean;
   backgroundColor?: string;
+  // Multi-page support
+  pages?: PackedPage[];
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  isMultiPage?: boolean;
 }
 
 type ZoomMode = 'fit' | 'actual';
@@ -21,17 +26,47 @@ export function CanvasPreview({
   fitMode = 'contain',
   showGrid = true,
   backgroundColor = '#ffffff',
+  pages,
+  currentPage = 1,
+  onPageChange = () => {},
+  isMultiPage = false,
 }: CanvasPreviewProps) {
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit');
   const [gridVisible, setGridVisible] = useState(showGrid);
 
+  // Get current page images and canvas size
+  const currentPageImages = pages && pages.length > 0 && currentPage <= pages.length
+    ? pages[currentPage - 1].images
+    : packedImages;
+
+  const currentPageCanvasSize = pages && pages.length > 0 && currentPage <= pages.length
+    ? pages[currentPage - 1].canvasSize
+    : canvasSize;
+
+  const totalPages = pages?.length || 1;
+  const canGoPrev = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+
+  // Page navigation handlers (stable callbacks)
+  const handlePrevPage = useCallback(() => {
+    if (canGoPrev) {
+      onPageChange(currentPage - 1);
+    }
+  }, [canGoPrev, currentPage, onPageChange]);
+
+  const handleNextPage = useCallback(() => {
+    if (canGoNext) {
+      onPageChange(currentPage + 1);
+    }
+  }, [canGoNext, currentPage, onPageChange]);
+
   // Fit the plate inside a 720x540 budget, never upscaling past 1:1.
-  const fitScale = Math.min(720 / canvasSize.width, 540 / canvasSize.height, 1);
+  const fitScale = Math.min(720 / currentPageCanvasSize.width, 540 / currentPageCanvasSize.height, 1);
   const scale = zoomMode === 'fit' ? fitScale : 1;
 
-  const displayWidth = canvasSize.width * scale;
-  const displayHeight = canvasSize.height * scale;
-  const isEmpty = packedImages.length === 0;
+  const displayWidth = currentPageCanvasSize.width * scale;
+  const displayHeight = currentPageCanvasSize.height * scale;
+  const isEmpty = currentPageImages.length === 0;
 
   if (isEmpty) {
     return (
@@ -103,6 +138,41 @@ export function CanvasPreview({
           >
             <Grid3x3 className="h-4 w-4" aria-hidden="true" />
           </button>
+
+          {/* Page navigation for multi-page - top right */}
+          {isMultiPage && totalPages > 1 && (
+            <div className="flex items-center gap-1.5 ml-4 border-l border-line pl-4">
+              <button
+                type="button"
+                onClick={handlePrevPage}
+                disabled={!canGoPrev}
+                aria-label="Página anterior"
+                className={cn(
+                  'btn btn-ghost btn-icon h-10 w-10 rounded-control',
+                  canGoPrev ? 'text-fg hover:bg-accent-soft' : 'text-muted opacity-50 cursor-not-allowed'
+                )}
+              >
+                <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <span className="chip border-line bg-surface/90 text-fg backdrop-blur-md px-3 py-1.5 text-sm">
+                <span className="num font-medium">
+                  Página {currentPage} de {totalPages}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={handleNextPage}
+                disabled={!canGoNext}
+                aria-label="Página siguiente"
+                className={cn(
+                  'btn btn-ghost btn-icon h-10 w-10 rounded-control',
+                  canGoNext ? 'text-fg hover:bg-accent-soft' : 'text-muted opacity-50 cursor-not-allowed'
+                )}
+              >
+                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -129,7 +199,7 @@ export function CanvasPreview({
               />
             )}
 
-            {packedImages.map((img) => (
+            {currentPageImages.map((img) => (
               <div
                 key={img.id}
                 className="absolute"
@@ -186,13 +256,13 @@ export function CanvasPreview({
         </div>
 
         {/* Readout */}
-        <div className="pointer-events-none sticky bottom-2 left-0 flex w-full justify-end px-2">
+        <div className="sticky bottom-2 left-0 flex w-full justify-between px-2 items-center">
           <span className="chip border-line bg-surface/90 text-fg backdrop-blur-md">
             <span className="num">
-              {canvasSize.width} × {canvasSize.height} px
+              {currentPageCanvasSize.width} × {currentPageCanvasSize.height} px
             </span>
             <span className="text-muted">·</span>
-            <span className="num">{packedImages.length} piezas</span>
+            <span className="num">{currentPageImages.length} piezas</span>
             <span className="text-muted">·</span>
             <span className="num">{Math.round(scale * 100)}%</span>
           </span>

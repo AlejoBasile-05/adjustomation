@@ -40,13 +40,23 @@ export function PackingApp() {
     resetPacking,
     downloadResult,
     dismissError,
+    useMultiPage,
+    maxPages,
+    setUseMultiPage,
+    setMaxPages,
   } = useImagePacker();
 
   const { theme, toggleTheme } = useTheme();
   const [isDragging, setIsDragging] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const canPack = images.length > 0 && !isProcessing;
   const hasImages = images.length > 0;
+
+  // Reset page when result changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [result]);
 
   // Drop anywhere in the window, not only on the dedicated target.
   useEffect(() => {
@@ -269,6 +279,10 @@ export function PackingApp() {
                   canvasSize={result?.canvasSize ?? canvasSize}
                   padding={options.padding}
                   fitMode={options.fitMode}
+                  pages={result?.pages}
+                  currentPage={currentPage}
+                  onPageChange={(page: number) => setCurrentPage(page)}
+                  isMultiPage={result?.isMultiPage ?? false}
                 />
               </div>
             </section>
@@ -290,6 +304,10 @@ export function PackingApp() {
                   isPacking={isProcessing}
                   packedCount={result?.stats.packedCount}
                   totalImages={images.length}
+                  useMultiPage={useMultiPage}
+                  maxPages={maxPages}
+                  onUseMultiPageChange={setUseMultiPage}
+                  onMaxPagesChange={setMaxPages}
                 />
               </section>
 

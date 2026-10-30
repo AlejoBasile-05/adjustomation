@@ -6,7 +6,8 @@ import type {
   PackingOptions,
   PackingResult,
   PackingStats,
-  SortingStrategy
+  SortingStrategy,
+  PackedPage
 } from '../types';
 
 // Unit conversion constants (300 DPI fixed)
@@ -174,41 +175,52 @@ function packUniform(
   canvasHeight: number,
   _padding: number,
   cellPadding: number,
-  fitMode: 'contain' | 'cover' = 'contain'
+  _fitMode: 'contain' | 'cover' = 'contain'
 ): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
   if (images.length === 0) {
     return { packed: [], unpacked: [], canvasWidth, canvasHeight };
   }
 
-  // Estimate grid: find cols/rows that best fit
-  let bestCols = 1, bestRows = images.length;
+  // Estimate grid: find cols/rows that best fit within canvas bounds
+  let bestCols = 1, bestRows = 1;
   let bestEfficiency = 0;
-  
+  let bestFitCount = 0;
+
+  // Minimum reasonable cell dimensions to prevent extreme scaling
+  const MIN_CELL_DIMENSION = 50;
+
   for (let cols = 1; cols <= images.length; cols++) {
-    const rows = Math.ceil(images.length / cols);
     const cellWidth = (canvasWidth - (cols + 1) * cellPadding) / cols;
-    const cellHeight = (canvasHeight - (rows + 1) * cellPadding) / rows;
-    
-    if (cellWidth <= 0 || cellHeight <= 0) continue;
-    
-    // Count how many images fit in this grid
-    let fitCount = 0;
-    for (const img of images) {
-      if (fitMode === 'contain') {
-        // For contain, image must fit within cell (respecting aspect ratio)
-        const scale = Math.min(cellWidth / img.width, cellHeight / img.height);
-        if (scale > 0) fitCount++;
-      } else {
-        // For cover, image just needs cell area
-        if (cellWidth > 0 && cellHeight > 0) fitCount++;
+
+    if (cellWidth <= 0) continue;
+
+    // Calculate max rows that fit in canvas height
+    for (let rows = 1; rows <= images.length; rows++) {
+      const cellHeight = (canvasHeight - (rows + 1) * cellPadding) / rows;
+
+      if (cellHeight <= 0) break; // More rows will only make cellHeight smaller
+
+      // Require reasonable cell dimensions to prevent extreme scaling
+      if (cellWidth < MIN_CELL_DIMENSION || cellHeight < MIN_CELL_DIMENSION) continue;
+
+      // Count how many images fit in this grid (cols * rows cells max)
+      const maxCells = cols * rows;
+      let fitCount = 0;
+
+      for (let i = 0; i < Math.min(images.length, maxCells); i++) {
+        const img = images[i];
+        if (img.width <= cellWidth && img.height <= cellHeight) {
+          fitCount++;
+        }
       }
-    }
-    
-    const efficiency = fitCount / images.length;
-    if (efficiency > bestEfficiency) {
-      bestEfficiency = efficiency;
-      bestCols = cols;
-      bestRows = rows;
+
+      const efficiency = fitCount / images.length;
+      if (efficiency > bestEfficiency || (efficiency === bestEfficiency && fitCount > bestFitCount)) {
+        bestEfficiency = efficiency;
+        bestFitCount = fitCount;
+        bestCols = cols;
+        bestRows = rows;
+      }
     }
   }
 
@@ -216,6 +228,7 @@ function packUniform(
   const rows = bestRows;
   const cellWidth = (canvasWidth - (cols + 1) * cellPadding) / cols;
   const cellHeight = (canvasHeight - (rows + 1) * cellPadding) / rows;
+  const maxCells = cols * rows;
 
   const packed: PackedImage[] = [];
   const unpacked: ImageFile[] = [];
@@ -224,7 +237,14 @@ function packUniform(
     const img = images[i];
     const col = i % cols;
     const row = Math.floor(i / cols);
-    
+
+    // Check if we've exceeded the grid capacity (cols * rows cells)
+    if (i >= maxCells) {
+      unpacked.push(img);
+      continue;
+    }
+
+    // Also check if row exceeds calculated rows
     if (row >= rows) {
       unpacked.push(img);
       continue;
@@ -233,27 +253,9 @@ function packUniform(
     const x = cellPadding + col * (cellWidth + cellPadding);
     const y = cellPadding + row * (cellHeight + cellPadding);
 
-    let displayWidth: number, displayHeight: number;
-    let sourceRect: { sx: number; sy: number; sw: number; sh: number } | undefined;
-
-    if (fitMode === 'contain') {
-      // Scale to fit within cell, preserving aspect ratio
-      const scale = Math.min(cellWidth / img.width, cellHeight / img.height);
-      displayWidth = Math.round(img.width * scale);
-      displayHeight = Math.round(img.height * scale);
-    } else {
-      // Cover: crop to fill cell
-      const scale = Math.max(cellWidth / img.width, cellHeight / img.height);
-      const scaledW = Math.round(img.width * scale);
-      const scaledH = Math.round(img.height * scale);
-      displayWidth = cellWidth;
-      displayHeight = cellHeight;
-      // Source rect for cropping (center crop)
-      const sx = Math.max(0, (scaledW - cellWidth) / 2 / scale);
-      const sy = Math.max(0, (scaledH - cellHeight) / 2 / scale);
-      const sw = Math.min(img.width, cellWidth / scale);
-      const sh = Math.min(img.height, cellHeight / scale);
-      sourceRect = { sx, sy, sw, sh };
+    if (img.width > cellWidth || img.height > cellHeight) {
+      unpacked.push(img);
+      continue;
     }
 
     packed.push({
@@ -261,9 +263,8 @@ function packUniform(
       x: Math.round(x),
       y: Math.round(y),
       rotated: false,
-      displayWidth: Math.round(displayWidth),
-      displayHeight: Math.round(displayHeight),
-      sourceRect,
+      displayWidth: img.width,
+      displayHeight: img.height,
     });
   }
 
@@ -288,7 +289,7 @@ function packColumns(
   // Use actual number of columns based on image count to avoid overly wide columns
   const cols = Math.min(columns, images.length);
   const colWidth = (canvasWidth - (cols + 1) * padding) / cols;
-  
+
   if (colWidth <= 0) {
     return { packed: [], unpacked: images, canvasWidth, canvasHeight };
   }
@@ -301,14 +302,12 @@ function packColumns(
     // Find column with minimum current height
     const minCol = colHeights.indexOf(Math.min(...colHeights));
     colImages[minCol].push(img);
-    
+
     // Estimate height if placed in this column (with rotation check)
     // Use contain-style estimation: scale to fit colWidth, but don't scale UP
-    const scale = Math.min(1, colWidth / img.width);
-    let bestHeight = img.height * scale;
+    let bestHeight = img.height;
     if (allowRotation) {
-      const rotatedScale = Math.min(1, colWidth / img.height);
-      const rotatedHeight = img.width * rotatedScale;
+      const rotatedHeight = img.width;
       if (rotatedHeight < bestHeight) {
         bestHeight = rotatedHeight;
       }
@@ -327,29 +326,27 @@ function packColumns(
 
   for (let col = 0; col < cols; col++) {
     let currentY = padding;
-    
+
     for (const img of colImages[col]) {
       const x = padding + col * (colWidth + padding);
-      
+
       // Try with rotation if allowed
       let displayWidth = img.width;
       let displayHeight = img.height;
       let rotated = false;
-      
+
       if (allowRotation) {
         // Use contain-style scaling - don't scale UP, only scale DOWN to fit
-        const scale = Math.min(1, colWidth / img.width);
-        const rotatedScale = Math.min(1, colWidth / img.height);
-        const normalHeight = img.height * scale;
-        const rotatedHeight = img.width * rotatedScale;
-        
+        const normalHeight = img.height;
+        const rotatedHeight = img.width;
+
         if (rotatedHeight < normalHeight && rotatedHeight <= canvasHeight - currentY - padding) {
           // Rotation fits better
-          displayWidth = img.height * rotatedScale;
-          displayHeight = img.width * rotatedScale; // colWidth * (img.width/img.height) = rotatedScale * img.width
+          displayWidth = img.height;
+          displayHeight = img.width;
           rotated = true;
         } else if (normalHeight <= canvasHeight - currentY - padding) {
-          displayWidth = img.width * scale;
+          displayWidth = img.width;
           displayHeight = normalHeight;
           rotated = false;
         } else {
@@ -358,19 +355,13 @@ function packColumns(
           continue;
         }
       } else {
-        // Try contain-style scaling (fit within column width and available height)
-        const scaleByWidth = colWidth / img.width;
-        const scaleByHeight = (canvasHeight - currentY - padding) / img.height;
-        const scale = Math.min(scaleByWidth, scaleByHeight);
-        
-        displayWidth = img.width * scale;
-        displayHeight = img.height * scale;
-        
-        // If still doesn't fit, skip
-        if (displayHeight > canvasHeight - currentY - padding || displayWidth > colWidth) {
+        // Native size, no scaling
+        if (img.width > colWidth || img.height > canvasHeight - currentY - padding) {
           unpacked.push(img);
           continue;
         }
+        displayWidth = img.width;
+        displayHeight = img.height;
       }
 
       packed.push({
@@ -381,7 +372,7 @@ function packColumns(
         displayWidth: Math.round(displayWidth),
         displayHeight: Math.round(displayHeight),
       });
-      
+
       currentY += displayHeight + padding;
     }
   }
@@ -406,7 +397,7 @@ function packRows(
 
   const r = Math.min(rows, images.length);
   const rowHeight = (canvasHeight - (r + 1) * padding) / r;
-  
+
   if (rowHeight <= 0) {
     return { packed: [], unpacked: images, canvasWidth, canvasHeight };
   }
@@ -418,10 +409,10 @@ function packRows(
   for (const img of images) {
     const minRow = rowWidths.indexOf(Math.min(...rowWidths));
     rowImages[minRow].push(img);
-    
+
     let bestWidth = img.width;
     if (allowRotation) {
-      const rotatedWidth = (img.height / img.width) * rowHeight;
+      const rotatedWidth = img.height;
       if (rotatedWidth < img.width) {
         bestWidth = rotatedWidth;
       }
@@ -434,40 +425,38 @@ function packRows(
 
   for (let row = 0; row < r; row++) {
     let currentX = padding;
-    
+
     for (const img of rowImages[row]) {
       const y = padding + row * (rowHeight + padding);
-      
+
       let displayWidth = img.width;
       let displayHeight = img.height;
       let rotated = false;
-      
+
       if (allowRotation) {
-        const scale = rowHeight / img.height;
-        const rotatedScale = rowHeight / img.width;
-        const normalWidth = img.width * scale;
-        const rotatedWidth = img.height * rotatedScale;
-        
+        const normalWidth = img.width;
+        const rotatedWidth = img.height;
+
         if (rotatedWidth < normalWidth && rotatedWidth <= canvasWidth - currentX - padding) {
-          displayWidth = rowHeight;
-          displayHeight = img.width * rotatedScale;
+          displayWidth = img.height;
+          displayHeight = img.width;
           rotated = true;
         } else if (normalWidth <= canvasWidth - currentX - padding) {
-          displayWidth = normalWidth;
-          displayHeight = rowHeight;
+          displayWidth = img.width;
+          displayHeight = img.height;
           rotated = false;
         } else {
           unpacked.push(img);
           continue;
         }
       } else {
-        const scale = rowHeight / img.height;
-        displayWidth = img.width * scale;
-        displayHeight = rowHeight;
-        if (displayWidth > canvasWidth - currentX - padding) {
+        // Native size, no scaling
+        if (img.width > canvasWidth - currentX - padding || img.height > rowHeight) {
           unpacked.push(img);
           continue;
         }
+        displayWidth = img.width;
+        displayHeight = img.height;
       }
 
       packed.push({
@@ -478,7 +467,7 @@ function packRows(
         displayWidth: Math.round(displayWidth),
         displayHeight: Math.round(displayHeight),
       });
-      
+
       currentX += displayWidth + padding;
     }
   }
@@ -756,6 +745,169 @@ export function packImages(
     unusedImages: unpacked,
     stats,
     layoutMode,
+  };
+}
+
+/**
+ * Pack a single page with the given images
+ * Returns the same result structure as the internal layout functions
+ */
+function packSinglePage(
+  images: ImageFile[],
+  options: PackingOptions
+): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number; efficiency: number } {
+  const layoutMode = options.layoutMode || 'mixed';
+  const columns = options.columns || 4;
+  const rows = options.rows || 3;
+  const cellPadding = options.cellPadding || 4;
+  const fitMode = options.fitMode || 'contain';
+
+  // Sort images for this page
+  const sortedImages = sortImages(images, options.sortingStrategy);
+
+  let result: { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number };
+
+  switch (layoutMode) {
+    case 'uniform':
+    case 'contact-sheet':
+      result = packUniform(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, cellPadding, fitMode);
+      break;
+    case 'columns':
+      result = packColumns(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, columns, options.allowRotation);
+      break;
+    case 'rows':
+      result = packRows(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, rows, options.allowRotation);
+      break;
+    case 'guillotine':
+      result = packGuillotine(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, options.allowRotation, options.sortingStrategy);
+      break;
+    case 'mixed':
+    default:
+      // For mixed mode, we first try with auto-expand (existing behavior)
+      // If still unpacked after max expansion, we'll handle in the multi-page loop
+      result = tryPackMixed(sortedImages, options.canvasSize.width, options.canvasSize.height, options.allowRotation, options.padding, options.sortingStrategy);
+      break;
+  }
+
+  const finalWidth = result.canvasWidth || options.canvasSize.width;
+  const finalHeight = result.canvasHeight || options.canvasSize.height;
+
+  // Calculate efficiency
+  const usedArea = result.packed.reduce((sum, img) => sum + img.area, 0);
+  const canvasArea = finalWidth * finalHeight;
+  const efficiency = canvasArea > 0 ? (usedArea / canvasArea) * 100 : 0;
+
+  return {
+    packed: result.packed,
+    unpacked: result.unpacked,
+    canvasWidth: finalWidth,
+    canvasHeight: finalHeight,
+    efficiency
+  };
+}
+
+/**
+ * Multi-page packing: distributes images across multiple canvases when they don't fit in one
+ */
+export function packImagesMultiPage(
+  images: ImageFile[],
+  options: PackingOptions,
+  maxPages: number = 10
+): PackingResult {
+  if (images.length === 0) {
+    return {
+      packedImages: [],
+      canvasSize: options.canvasSize,
+      efficiency: 0,
+      unusedImages: [],
+      stats: {
+        totalImages: 0,
+        packedCount: 0,
+        unpackedCount: 0,
+        totalArea: 0,
+        usedArea: 0,
+        efficiency: 0,
+        canvasArea: options.canvasSize.width * options.canvasSize.height,
+      },
+      layoutMode: options.layoutMode || 'mixed',
+      pages: [],
+      totalPages: 0,
+      isMultiPage: false,
+    };
+  }
+
+  // Sort images based on strategy
+  const sortedImages = sortImages(images, options.sortingStrategy);
+  
+  let remainingImages = sortedImages;
+  const allPages: PackedPage[] = [];
+  let pageNumber = 1;
+  const layoutMode = options.layoutMode || 'mixed';
+  const maxPagesLimit = maxPages || 10;
+
+  // For mixed mode, we need to pass the original images to each page attempt
+  // because tryPackMixed re-sorts internally
+  const baseOptions: PackingOptions = { ...options };
+
+  while (remainingImages.length > 0 && pageNumber <= maxPagesLimit) {
+    const singlePageResult = packSinglePage(remainingImages, baseOptions);
+    
+    // If no images were packed on this page, break to avoid infinite loop
+    if (singlePageResult.packed.length === 0) {
+      break;
+    }
+
+    const pageCanvasSize: CanvasSize = { 
+      width: singlePageResult.canvasWidth, 
+      height: singlePageResult.canvasHeight 
+    };
+
+    allPages.push({
+      images: singlePageResult.packed,
+      canvasSize: pageCanvasSize,
+      efficiency: singlePageResult.efficiency,
+      pageNumber
+    });
+
+    remainingImages = singlePageResult.unpacked;
+    pageNumber++;
+  }
+
+  // If we hit max pages but still have unpacked images, add them to unusedImages
+  const unusedImages = remainingImages;
+
+  // Combine all packed images for backward compatibility (first page data)
+  const allPackedImages = allPages.flatMap(page => page.images);
+  const firstPage = allPages[0];
+  const totalArea = images.reduce((sum, img) => sum + img.area, 0);
+  const usedArea = allPackedImages.reduce((sum, img) => sum + img.area, 0);
+  const firstPageCanvasArea = firstPage ? firstPage.canvasSize.width * firstPage.canvasSize.height : options.canvasSize.width * options.canvasSize.height;
+  const firstPageEfficiency = firstPageCanvasArea > 0 ? (firstPage?.images.reduce((sum, img) => sum + img.area, 0) || 0) / firstPageCanvasArea * 100 : 0;
+
+  // Calculate total canvas area across all pages
+  const totalCanvasArea = allPages.reduce((sum, page) => sum + page.canvasSize.width * page.canvasSize.height, 0);
+  const overallEfficiency = totalCanvasArea > 0 ? (usedArea / totalCanvasArea) * 100 : 0;
+
+  const stats: PackingStats = {
+    totalImages: images.length,
+    packedCount: allPackedImages.length,
+    unpackedCount: unusedImages.length,
+    totalArea,
+    usedArea,
+    efficiency: overallEfficiency,
+    canvasArea: totalCanvasArea,
+  };
+
+  return {
+    packedImages: allPackedImages,
+    canvasSize: firstPage?.canvasSize || options.canvasSize,
+    efficiency: firstPageEfficiency,
+    unusedImages,
+    stats,
+    layoutMode,
+    pages: allPages,
+    totalPages: allPages.length,
+    isMultiPage: allPages.length > 1,
   };
 }
 

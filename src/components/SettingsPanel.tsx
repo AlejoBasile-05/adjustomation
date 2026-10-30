@@ -12,6 +12,10 @@ interface SettingsPanelProps {
   isPacking?: boolean;
   packedCount?: number;
   totalImages?: number;
+  useMultiPage?: boolean;
+  maxPages?: number;
+  onUseMultiPageChange?: (use: boolean) => void;
+  onMaxPagesChange?: (pages: number) => void;
 }
 
 const sortingStrategies: { value: SortingStrategy; label: string; description: string; icon: React.ReactNode }[] = [
@@ -99,7 +103,11 @@ export function SettingsPanel({
   onUnitChange,
   isPacking,
   packedCount,
-  totalImages
+  totalImages,
+  useMultiPage,
+  maxPages,
+  onUseMultiPageChange,
+  onMaxPagesChange,
 }: SettingsPanelProps) {
   const currentUnit = options.unit || 'px';
   
@@ -502,6 +510,60 @@ export function SettingsPanel({
               <span className="num text-[10px] text-muted">50</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Multi-page options */}
+      <div className="border-t border-line pt-4">
+        <span className="eyebrow">Empaquetado multi-página</span>
+        <div className="mt-2 space-y-3">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-control border border-line bg-raised px-3 py-2.5">
+            <span className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={useMultiPage || false}
+                onChange={(e) => onUseMultiPageChange?.(e.target.checked)}
+                disabled={isPacking}
+                className={cn(
+                  'h-4 w-4 rounded accent-[var(--app-accent)]',
+                  'disabled:cursor-not-allowed disabled:opacity-50'
+                )}
+              />
+              <span className="text-sm text-fg">Crear múltiples páginas automáticamente</span>
+            </span>
+            <span className="hidden text-[10px] text-muted sm:block">Cuando las imágenes no quepan, crea nuevas páginas</span>
+          </label>
+
+          {useMultiPage && (
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label htmlFor="max-pages" className="text-[10px] text-muted">
+                  Máximo de páginas
+                </label>
+                <span className="chip">
+                  <span className="num">{maxPages || 10}</span>
+                </span>
+              </div>
+              <input
+                id="max-pages"
+                type="range"
+                min={1}
+                max={100}
+                value={maxPages || 10}
+                onChange={(e) => onMaxPagesChange?.(parseInt(e.target.value))}
+                disabled={isPacking}
+                className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Máximo número de páginas"
+              />
+              <div className="flex justify-between">
+                <span className="num text-[10px] text-muted">1</span>
+                <span className="num text-[10px] text-muted">100</span>
+              </div>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted">
+                Las imágenes que no quepan en el máximo de páginas se marcarán como no colocadas.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

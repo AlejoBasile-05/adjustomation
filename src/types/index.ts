@@ -37,6 +37,9 @@ export interface PackingOptions {
   cellPadding?: number;    // For uniform/contact-sheet
   fitMode?: 'contain' | 'cover'; // For uniform/contact-sheet
   unit?: UnitType;
+  // Multi-page options
+  useMultiPage?: boolean;   // Enable multi-page packing
+  maxPages?: number;        // Maximum number of pages (default 10)
 }
 
 export type SortingStrategy = 
@@ -55,6 +58,13 @@ export type LayoutMode =
   | 'guillotine'     // Algoritmo Guillotina (cortes guillotina)
   | 'contact-sheet'; // Hoja de contactos (grid uniforme con metadata)
 
+export interface PackedPage {
+  images: PackedImage[];
+  canvasSize: CanvasSize;
+  efficiency: number;
+  pageNumber: number;
+}
+
 export interface PackingResult {
   packedImages: PackedImage[];
   canvasSize: CanvasSize;
@@ -62,6 +72,11 @@ export interface PackingResult {
   unusedImages: ImageFile[]; // Imágenes que no cabieron
   stats: PackingStats;
   layoutMode: LayoutMode;    // Modo de layout utilizado
+  
+  // NEW: Multi-page support
+  pages?: PackedPage[];           // All pages (including first)
+  totalPages?: number;            // Total page count
+  isMultiPage?: boolean;          // Flag for UI
 }
 
 export interface PackingStats {

@@ -162,17 +162,54 @@ export function ResultsPanel({ result, onDownload, isPacking }: ResultsPanelProp
 
       {/* Unpacked warning */}
       {unusedImages.length > 0 && (
-        <div className="flex items-start gap-2.5 rounded-control border border-warn/40 bg-warn-soft px-3 py-2.5">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-warn">
-              {unusedImages.length} imagen{unusedImages.length !== 1 ? 'es' : ''} no caben
-            </p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-warn/90">
-              Aumenta el tamaño del lienzo o reduce el espaciado para incluirlas.
-            </p>
+        <>
+          <div className="flex items-start gap-2.5 rounded-control border border-warn/40 bg-warn-soft px-3 py-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-warn">
+                {unusedImages.length} imagen{unusedImages.length !== 1 ? 'es' : ''} no caben
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-warn/90">
+                Aumenta el tamaño del lienzo o reduce el espaciado para incluirlas.
+              </p>
+            </div>
           </div>
-        </div>
+
+          {/* Unpacked images gallery */}
+          <section className="panel">
+            <div className="panel-head">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Scissors className="h-4 w-4 text-warn" aria-hidden="true" />
+                Imágenes sin colocar
+              </h2>
+            </div>
+            <div className="animate-pop space-y-3 p-3">
+              <div className="scroll-thin grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4 xl:grid-cols-5">
+                {unusedImages.map((img) => (
+                  <div
+                    key={img.id}
+                    className="group relative aspect-square overflow-hidden rounded-[10px] border border-warn/50 bg-warn-soft/30"
+                  >
+                    <img
+                      src={img.preview}
+                      alt={img.file.name}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                      loading="lazy"
+                    />
+
+                    {/* Dimensions + name */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-1.5 pb-1 pt-4">
+                      <p className="truncate text-[10px] leading-tight text-white/90">{img.file.name}</p>
+                      <p className="num text-[10px] leading-tight text-white/65">
+                        {img.width}×{img.height}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
       )}
 
       {/* Download */}

@@ -686,39 +686,7 @@ export function packImages(
 
   let { packed, unpacked, canvasWidth, canvasHeight } = result;
 
-  // For non-mixed modes, we don't auto-expand canvas (fixed layout)
-  // For mixed mode, we can try expanding if images don't fit
-  if (layoutMode === 'mixed') {
-    let currentWidth = options.canvasSize.width;
-    let currentHeight = options.canvasSize.height;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (unpacked.length > 0 && attempts < maxAttempts) {
-      currentWidth = Math.ceil(currentWidth * 1.2);
-      currentHeight = Math.ceil(currentHeight * 1.2);
-      
-      const newResult = tryPackMixed(
-        sortedImages,
-        currentWidth,
-        currentHeight,
-        options.allowRotation,
-        options.padding,
-        options.sortingStrategy
-      );
-      
-      if (newResult.unpacked.length < unpacked.length) {
-        packed = newResult.packed;
-        unpacked = newResult.unpacked;
-        canvasWidth = newResult.canvasWidth;
-        canvasHeight = newResult.canvasHeight;
-      } else {
-        break;
-      }
-      attempts++;
-    }
-  }
-
+  // Canvas size is FIXED - never auto-expand. Images that don't fit go to unpacked.
   const finalWidth = canvasWidth || options.canvasSize.width;
   const finalHeight = canvasHeight || options.canvasSize.height;
 

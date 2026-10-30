@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { UnitType, convertCanvasSize, MIN_CANVAS_PX, MAX_CANVAS_PX, revokeImageFileURLs } from '../utils/packing';
 import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy, LayoutMode } from '../types';
-import { createImageFile, packImages, packImagesMultiPage, calculateOptimalCanvasSize } from '../utils/packing';
+import { createImageFile, packImages, packImagesMultiPage } from '../utils/packing';
 import { drawPackedCanvas, downloadAllPackedPages } from '../utils/packing/export';
 
 export const MAX_IMAGES = 50;
@@ -257,22 +257,7 @@ const downloadResult = useCallback(async () => {
     setResult(null);
   }, []);
 
-  // Auto-calculate the optimal canvas size when the image *set* changes.
-  // Keyed on the set signature (not on `result`), so a manual size edit or a pack
-  // cycle is never silently overwritten.
-  const autoSizedSignature = useRef<string | null>(null);
-  useEffect(() => {
-    if (images.length === 0) {
-      autoSizedSignature.current = null;
-      return;
-    }
 
-    const signature = images.map(img => img.id).join('|');
-    if (autoSizedSignature.current === signature) return;
-
-    autoSizedSignature.current = signature;
-    setCanvasSizeState(calculateOptimalCanvasSize(images));
-  }, [images]);
 
   return {
     images,

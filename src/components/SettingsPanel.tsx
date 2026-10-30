@@ -263,7 +263,7 @@ export function SettingsPanel({
         </div>
         <p className="mt-2 text-[10px] leading-relaxed text-muted">
           {currentUnit === 'px'
-            ? 'Se ajusta automáticamente al cargar imágenes; puedes fijarlo a mano.'
+            ? 'El tamaño del lienzo se mantiene fijo. Las imágenes que no quepan se notifican como no colocadas.'
             : 'DPI fijo: 300. 1 pulgada = 2.54 cm. Se convierte automáticamente a píxeles.'}
         </p>
       </div>

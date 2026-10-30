@@ -309,14 +309,16 @@ describe('Layout Modes', () => {
       assertNoOverlaps(result.packedImages, result.canvasSize.width, result.canvasSize.height);
     });
 
-    test('mixed: auto-expands canvas when images dont fit', () => {
+    test('mixed: does not auto-expand canvas; images that dont fit go to unpacked', () => {
       // Many images that won't fit in 800x600
       const images = generateUniformSet(50, 150, 150);
       const result = packImages(images, { ...testOptions, layoutMode: 'mixed', canvasSize: { width: 800, height: 600 } });
-      // Canvas should expand
-      expect(result.canvasSize.width).toBeGreaterThan(800);
-      expect(result.canvasSize.height).toBeGreaterThan(600);
-      expect(result.stats.packedCount).toBeGreaterThan(0);
+      // Canvas should stay at 800x600 (no auto-expansion)
+      expect(result.canvasSize.width).toBe(800);
+      expect(result.canvasSize.height).toBe(600);
+      // Some images should be unpacked since they dont all fit
+      expect(result.stats.unpackedCount).toBeGreaterThan(0);
+      expect(result.stats.packedCount).toBeLessThan(images.length);
     });
   });
 });

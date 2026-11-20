@@ -6,8 +6,6 @@ import type { PackedImage, CanvasSize, PackedPage } from '../types';
 interface CanvasPreviewProps {
   packedImages: PackedImage[];
   canvasSize: CanvasSize;
-  padding: number;
-  fitMode?: 'contain' | 'cover';
   showGrid?: boolean;
   backgroundColor?: string;
   // Multi-page support
@@ -22,8 +20,6 @@ type ZoomMode = 'fit' | 'actual';
 export function CanvasPreview({
   packedImages,
   canvasSize,
-  padding,
-  fitMode = 'contain',
   showGrid = true,
   backgroundColor = '#ffffff',
   pages,
@@ -199,59 +195,38 @@ export function CanvasPreview({
               />
             )}
 
-            {currentPageImages.map((img) => (
-              <div
-                key={img.id}
-                className="absolute"
-                style={{
-                  left: img.x * scale,
-                  top: img.y * scale,
-                  width: img.displayWidth * scale,
-                  height: img.displayHeight * scale,
-                  transform: img.rotated ? 'rotate(90deg)' : 'none',
-                  transformOrigin: 'top left',
-                }}
-              >
-                {fitMode === 'cover' && img.sourceRect ? (
-                  <canvas
-                    ref={(el) => {
-                      if (el) {
-                        const ctx = el.getContext('2d');
-                        if (ctx) {
-                          const image = new Image();
-                          image.onload = () => {
-                            const { sx, sy, sw, sh } = img.sourceRect!;
-                            ctx.drawImage(image, sx, sy, sw, sh, 0, 0, img.displayWidth, img.displayHeight);
-                          };
-                          image.src = img.preview;
-                        }
-                      }
-                    }}
-                    className="h-full w-full"
-                    width={img.displayWidth}
-                    height={img.displayHeight}
-                    style={{ imageRendering: 'crisp-edges' }}
-                  >
-                  </canvas>
-                ) : (
+            {currentPageImages.map((img) => {
+              const drawnWidth = img.rotated ? img.displayHeight : img.displayWidth;
+              const drawnHeight = img.rotated ? img.displayWidth : img.displayHeight;
+
+              return (
+                <div
+                  key={img.id}
+                  className="absolute"
+                  style={{
+                    left: img.x * scale,
+                    top: img.y * scale,
+                    width: img.displayWidth * scale,
+                    height: img.displayHeight * scale,
+                  }}
+                >
                   <img
                     src={img.preview}
                     alt={img.file.name}
-                    className="h-full w-full object-cover"
-                    style={{ imageRendering: 'crisp-edges' }}
-                  />
-                )}
-                {padding > 0 && (
-                  <div
-                    className="pointer-events-none absolute inset-0 border-line-strong/60"
+                    className="absolute object-contain"
                     style={{
-                      margin: -padding * scale,
-                      borderWidth: `${Math.max(1, padding * scale)}px`,
+                      left: ((img.displayWidth - drawnWidth) / 2) * scale,
+                      top: ((img.displayHeight - drawnHeight) / 2) * scale,
+                      width: drawnWidth * scale,
+                      height: drawnHeight * scale,
+                      transform: img.rotated ? 'rotate(90deg)' : 'none',
+                      transformOrigin: 'center',
+                      imageRendering: 'crisp-edges',
                     }}
                   />
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </div>
 

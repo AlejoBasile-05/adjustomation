@@ -40,6 +40,7 @@ export function PackingApp() {
     resetPacking,
     downloadResult,
     dismissError,
+    setUnit,
     useMultiPage,
     maxPages,
     setUseMultiPage,
@@ -277,8 +278,6 @@ export function PackingApp() {
                 <CanvasPreview
                   packedImages={result?.packedImages ?? []}
                   canvasSize={result?.canvasSize ?? canvasSize}
-                  padding={options.padding}
-                  fitMode={options.fitMode}
                   pages={result?.pages}
                   currentPage={currentPage}
                   onPageChange={(page: number) => setCurrentPage(page)}
@@ -300,7 +299,7 @@ export function PackingApp() {
                   options={options}
                   onOptionChange={setOption}
                   onCanvasSizeChange={setCanvasSize}
-                  onUnitChange={(unit) => setOption('unit', unit)}
+                  onUnitChange={setUnit}
                   isPacking={isProcessing}
                   packedCount={result?.stats.packedCount}
                   totalImages={images.length}

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { UnitType, convertCanvasSize, MIN_CANVAS_PX, MAX_CANVAS_PX, revokeImageFileURLs } from '../utils/packing';
+import { UnitType, MIN_CANVAS_PX, MAX_CANVAS_PX, revokeImageFileURLs } from '../utils/packing';
 import type { ImageFile, PackingOptions, PackingResult, CanvasSize, SortingStrategy, LayoutMode } from '../types';
 import { createImageFile, packImages, packImagesMultiPage } from '../utils/packing';
 import { drawPackedCanvas, downloadAllPackedPages } from '../utils/packing/export';
@@ -238,14 +238,12 @@ const downloadResult = useCallback(async () => {
   }, [result]);
 
   const setUnit = useCallback((unit: UnitType) => {
-    const currentUnit = options.unit || 'px';
-    const newCanvasSize = convertCanvasSize(canvasSize, currentUnit, unit);
-
-    setCanvasSizeState(newCanvasSize);
+    // `canvasSize` is always stored in pixels; switching the display unit must
+    // never convert it.
     setOptions(prev => ({ ...prev, unit }));
     setResult(null);
     saveUnitToStorage(unit);
-  }, [canvasSize, options.unit]);
+  }, []);
 
   const setUseMultiPage = useCallback((use: boolean) => {
     setUseMultiPageState(use);

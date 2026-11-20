@@ -433,62 +433,10 @@ export function SettingsPanel({
             </div>
           )}
 
-          {(['uniform', 'contact-sheet'].includes(options.layoutMode)) && (
-            <>
-              <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <label htmlFor="cell-padding" className="text-[10px] text-muted">
-                    Espaciado entre celdas
-                  </label>
-                  <span className="chip">
-                    <span className="num">{options.cellPadding || 4}</span> px
-                  </span>
-                </div>
-                <input
-                  id="cell-padding"
-                  type="range"
-                  min={0}
-                  max={50}
-                  value={options.cellPadding || 4}
-                  onChange={(e) => onOptionChange('cellPadding', parseInt(e.target.value))}
-                  disabled={isPacking}
-                  className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="Espaciado entre celdas en píxeles"
-                />
-                <div className="flex justify-between">
-                  <span className="num text-[10px] text-muted">0</span>
-                  <span className="num text-[10px] text-muted">50</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <label htmlFor="fit-mode" className="text-[10px] text-muted">
-                    Modo de ajuste
-                  </label>
-                  <span className="chip">
-                    {options.fitMode || 'contain'}
-                  </span>
-                </div>
-                <select
-                  id="fit-mode"
-                  value={options.fitMode || 'contain'}
-                  onChange={(e) => onOptionChange('fitMode', e.target.value as 'contain' | 'cover')}
-                  disabled={isPacking}
-                  className="w-full field text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="Modo de ajuste de imagen en celda"
-                >
-                  <option value="contain">Contener (ver imagen completa)</option>
-                  <option value="cover">Cubrir (recortar para llenar)</option>
-                </select>
-              </div>
-            </>
-          )}
-
           <div>
             <div className="mb-1 flex items-center justify-between">
               <label htmlFor="canvas-padding" className="text-[10px] text-muted">
-                Espaciado (borde)
+                Separación
               </label>
               <span className="chip">
                 <span className="num">{options.padding}</span> px
@@ -503,7 +451,7 @@ export function SettingsPanel({
               onChange={(e) => onOptionChange('padding', parseInt(e.target.value))}
               disabled={isPacking}
               className="w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Espaciado entre imágenes en píxeles"
+              aria-label="Separación entre fotos y borde en píxeles"
             />
             <div className="flex justify-between">
               <span className="num text-[10px] text-muted">0</span>

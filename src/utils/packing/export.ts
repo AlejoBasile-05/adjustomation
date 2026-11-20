@@ -31,20 +31,19 @@ export async function drawPackedCanvas(
 
       img.onload = () => {
         try {
+          // displayWidth/displayHeight are already swapped by the packer for
+          // rotated photos. Draw the native box (unswapped) and rotate 90° about
+          // the layout center so the visual box matches the packed box exactly.
+          const drawnWidth = packedImg.rotated ? packedImg.displayHeight : packedImg.displayWidth;
+          const drawnHeight = packedImg.rotated ? packedImg.displayWidth : packedImg.displayHeight;
+
           ctx.save();
           ctx.translate(packedImg.x + packedImg.displayWidth / 2, packedImg.y + packedImg.displayHeight / 2);
           if (packedImg.rotated) {
             ctx.rotate(Math.PI / 2);
           }
 
-          // Contain mode: draw full image
-          ctx.drawImage(
-            img,
-            -packedImg.displayWidth / 2,
-            -packedImg.displayHeight / 2,
-            packedImg.displayWidth,
-            packedImg.displayHeight
-          );
+          ctx.drawImage(img, -drawnWidth / 2, -drawnHeight / 2, drawnWidth, drawnHeight);
           ctx.restore();
           resolve();
         } catch (e) {

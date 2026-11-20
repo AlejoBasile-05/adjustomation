@@ -60,6 +60,19 @@ export function roundCm(value: number): number {
 }
 
 /**
+ * Resolve an aspect ratio that is safe to sort on (no NaN, no division by zero).
+ */
+function safeAspectRatio(img: ImageFile): number {
+  if (Number.isFinite(img.aspectRatio) && img.aspectRatio > 0) {
+    return img.aspectRatio;
+  }
+  if (Number.isFinite(img.width) && Number.isFinite(img.height) && img.height > 0) {
+    return img.width / img.height;
+  }
+  return 0;
+}
+
+/**
  * Sort images based on the selected strategy
  */
 export function sortImages(images: ImageFile[], strategy: SortingStrategy): ImageFile[] {
@@ -77,10 +90,14 @@ export function sortImages(images: ImageFile[], strategy: SortingStrategy): Imag
     case 'max-side-desc':
       return sorted.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
     case 'aspect-ratio':
-      return sorted.sort((a, b) => a.aspectRatio - b.aspectRatio);
+      return sorted.sort((a, b) => safeAspectRatio(a) - safeAspectRatio(b));
     default:
       return sorted;
   }
+}
+
+function hasPositiveDimensions(img: ImageFile): boolean {
+  return img.width > 0 && img.height > 0;
 }
 
 /**
@@ -99,18 +116,34 @@ function getPackingLogic(strategy: SortingStrategy): number {
   }
 }
 
+interface LayoutOutput {
+  packed: PackedImage[];
+  unpacked: ImageFile[];
+}
+
 /**
- * Try to pack images into a canvas using MaxRectsPacker (mixed mode)
+ * Mixed mode via MaxRectsPacker. The packer is given the inner area (canvas minus
+ * the border gap on both axes) and every accepted rect is offset by the gap, so
+ * the gap acts both between boxes and against the canvas edge. Rects larger than
+ * the inner area are never handed to the packer (it would auto-grow the bin).
  */
-function tryPackMixed(
+function packMixed(
   images: ImageFile[],
   canvasWidth: number,
   canvasHeight: number,
   allowRotation: boolean,
   padding: number,
   sortingStrategy: SortingStrategy
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
-  const packer = new MaxRectsPacker(canvasWidth, canvasHeight, padding, {
+): LayoutOutput {
+  const gap = Math.max(0, padding);
+  const innerWidth = canvasWidth - 2 * gap;
+  const innerHeight = canvasHeight - 2 * gap;
+
+  if (innerWidth <= 0 || innerHeight <= 0) {
+    return { packed: [], unpacked: images };
+  }
+
+  const packer = new MaxRectsPacker(innerWidth, innerHeight, gap, {
     allowRotation,
     logic: getPackingLogic(sortingStrategy),
     smart: false,
@@ -118,145 +151,111 @@ function tryPackMixed(
     square: false,
     border: 0,
   });
-  
+
   const packed: PackedImage[] = [];
   const unpacked: ImageFile[] = [];
-  const expectedBinIndex = 0;
 
   for (const img of images) {
-    const rect = {
-      width: img.width,
-      height: img.height,
-      data: { image: img }
-    };
-    
-    packer.add(rect);
-    
-    const bin = packer.bins[expectedBinIndex];
-    const rectInFirstBin = bin && bin.rects.find(r => r.data?.image?.id === img.id);
-    
-    const fitsInCanvas = rectInFirstBin && 
-      typeof rectInFirstBin.x === 'number' && 
-      typeof rectInFirstBin.y === 'number' &&
-      rectInFirstBin.x >= 0 && 
-      rectInFirstBin.y >= 0 &&
-      rectInFirstBin.x + rectInFirstBin.width <= canvasWidth + padding &&
-      rectInFirstBin.y + rectInFirstBin.height <= canvasHeight + padding;
-    
-    if (fitsInCanvas) {
-      packed.push({
-        ...img,
-        x: rectInFirstBin.x,
-        y: rectInFirstBin.y,
-        rotated: rectInFirstBin.rot || false,
-        displayWidth: rectInFirstBin.width,
-        displayHeight: rectInFirstBin.height,
-      });
-    } else {
+    const fitsNormal = img.width <= innerWidth && img.height <= innerHeight;
+    const fitsRotated =
+      allowRotation && img.height <= innerWidth && img.width <= innerHeight;
+
+    if (!fitsNormal && !fitsRotated) {
       unpacked.push(img);
+      continue;
     }
+
+    packer.add({ width: img.width, height: img.height, data: { image: img } });
+
+    const rect = packer.bins[0]?.rects.find((r) => r.data?.image?.id === img.id);
+
+    const insideInnerArea =
+      rect &&
+      typeof rect.x === 'number' &&
+      typeof rect.y === 'number' &&
+      rect.x >= 0 &&
+      rect.y >= 0 &&
+      rect.x + rect.width <= innerWidth &&
+      rect.y + rect.height <= innerHeight;
+
+    if (!insideInnerArea) {
+      unpacked.push(img);
+      continue;
+    }
+
+    packed.push({
+      ...img,
+      x: Math.round(rect.x + gap),
+      y: Math.round(rect.y + gap),
+      rotated: rect.rot || false,
+      displayWidth: Math.round(rect.width),
+      displayHeight: Math.round(rect.height),
+    });
   }
 
-  const bin = packer.bins[0];
-  return { 
-    packed, 
-    unpacked,
-    canvasWidth: bin?.width || canvasWidth,
-    canvasHeight: bin?.height || canvasHeight
-  };
+  return { packed, unpacked };
 }
 
 /**
- * Uniform grid layout - all images same cell size
+ * Uniform / contact-sheet layout: a single native-sized cell (largest image) is
+ * repeated across the sheet. No canvas division, no resizing. Images that cannot
+ * fit a cell go to unpacked.
  */
 function packUniform(
   images: ImageFile[],
   canvasWidth: number,
   canvasHeight: number,
-  _padding: number,
-  cellPadding: number,
-  _fitMode: 'contain' | 'cover' = 'contain'
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
+  padding: number
+): LayoutOutput {
   if (images.length === 0) {
-    return { packed: [], unpacked: [], canvasWidth, canvasHeight };
+    return { packed: [], unpacked: [] };
   }
 
-  // Estimate grid: find cols/rows that best fit within canvas bounds
-  let bestCols = 1, bestRows = 1;
-  let bestEfficiency = 0;
-  let bestFitCount = 0;
+  const gap = Math.max(0, padding);
 
-  // Minimum reasonable cell dimensions to prevent extreme scaling
-  const MIN_CELL_DIMENSION = 50;
-
-  for (let cols = 1; cols <= images.length; cols++) {
-    const cellWidth = (canvasWidth - (cols + 1) * cellPadding) / cols;
-
-    if (cellWidth <= 0) continue;
-
-    // Calculate max rows that fit in canvas height
-    for (let rows = 1; rows <= images.length; rows++) {
-      const cellHeight = (canvasHeight - (rows + 1) * cellPadding) / rows;
-
-      if (cellHeight <= 0) break; // More rows will only make cellHeight smaller
-
-      // Require reasonable cell dimensions to prevent extreme scaling
-      if (cellWidth < MIN_CELL_DIMENSION || cellHeight < MIN_CELL_DIMENSION) continue;
-
-      // Count how many images fit in this grid (cols * rows cells max)
-      const maxCells = cols * rows;
-      let fitCount = 0;
-
-      for (let i = 0; i < Math.min(images.length, maxCells); i++) {
-        const img = images[i];
-        if (img.width <= cellWidth && img.height <= cellHeight) {
-          fitCount++;
-        }
-      }
-
-      const efficiency = fitCount / images.length;
-      if (efficiency > bestEfficiency || (efficiency === bestEfficiency && fitCount > bestFitCount)) {
-        bestEfficiency = efficiency;
-        bestFitCount = fitCount;
-        bestCols = cols;
-        bestRows = rows;
-      }
+  // Images larger than what a cell can hold under the no-resize policy can never
+  // be placed. Excluding them from the cell computation lets the remaining
+  // photos still use a sensible cell size.
+  const packable: ImageFile[] = [];
+  const unpacked: ImageFile[] = [];
+  for (const img of images) {
+    if (img.width > canvasWidth - 2 * gap || img.height > canvasHeight - 2 * gap || img.width <= 0 || img.height <= 0) {
+      unpacked.push(img);
+    } else {
+      packable.push(img);
     }
   }
 
-  const cols = bestCols;
-  const rows = bestRows;
-  const cellWidth = (canvasWidth - (cols + 1) * cellPadding) / cols;
-  const cellHeight = (canvasHeight - (rows + 1) * cellPadding) / rows;
-  const maxCells = cols * rows;
+  if (packable.length === 0) {
+    return { packed: [], unpacked };
+  }
+
+  const cellWidth = Math.max(...packable.map((img) => img.width));
+  const cellHeight = Math.max(...packable.map((img) => img.height));
+
+  const cols = Math.max(1, Math.floor((canvasWidth - gap) / (cellWidth + gap)));
+  const maxRows = Math.max(1, Math.floor((canvasHeight - gap) / (cellHeight + gap)));
+  const capacity = cols * maxRows;
 
   const packed: PackedImage[] = [];
-  const unpacked: ImageFile[] = [];
 
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i];
+  for (let i = 0; i < packable.length; i++) {
+    const img = packable[i];
+
+    if (i >= capacity) {
+      unpacked.push(img);
+      continue;
+    }
+
     const col = i % cols;
     const row = Math.floor(i / cols);
-
-    // Check if we've exceeded the grid capacity (cols * rows cells)
-    if (i >= maxCells) {
+    if (row >= maxRows) {
       unpacked.push(img);
       continue;
     }
 
-    // Also check if row exceeds calculated rows
-    if (row >= rows) {
-      unpacked.push(img);
-      continue;
-    }
-
-    const x = cellPadding + col * (cellWidth + cellPadding);
-    const y = cellPadding + row * (cellHeight + cellPadding);
-
-    if (img.width > cellWidth || img.height > cellHeight) {
-      unpacked.push(img);
-      continue;
-    }
+    const x = gap + col * (cellWidth + gap) + (cellWidth - img.width) / 2;
+    const y = gap + row * (cellHeight + gap) + (cellHeight - img.height) / 2;
 
     packed.push({
       ...img,
@@ -268,11 +267,13 @@ function packUniform(
     });
   }
 
-  return { packed, unpacked, canvasWidth, canvasHeight };
+  return { packed, unpacked };
 }
 
 /**
- * Columns layout - fixed number of columns, variable row heights
+ * Columns layout: photos keep native size and stack inside a column with an exact
+ * gap. A new column starts after the widest photo of the previous column plus the
+ * gap. `columns` is a maximum, not a canvas divider.
  */
 function packColumns(
   images: ImageFile[],
@@ -281,107 +282,76 @@ function packColumns(
   padding: number,
   columns: number,
   allowRotation: boolean
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
-  if (images.length === 0 || columns <= 0) {
-    return { packed: [], unpacked: images, canvasWidth, canvasHeight };
+): LayoutOutput {
+  const gap = Math.max(0, padding);
+  const maxColumns = Math.floor(columns);
+
+  if (images.length === 0) {
+    return { packed: [], unpacked: [] };
   }
-
-  // Use actual number of columns based on image count to avoid overly wide columns
-  const cols = Math.min(columns, images.length);
-  const colWidth = (canvasWidth - (cols + 1) * padding) / cols;
-
-  if (colWidth <= 0) {
-    return { packed: [], unpacked: images, canvasWidth, canvasHeight };
-  }
-
-  // Distribute images across columns (greedy by height)
-  const colImages: ImageFile[][] = Array.from({ length: cols }, () => []);
-  const colHeights = Array(cols).fill(0);
-
-  for (const img of images) {
-    // Find column with minimum current height
-    const minCol = colHeights.indexOf(Math.min(...colHeights));
-    colImages[minCol].push(img);
-
-    // Estimate height if placed in this column (with rotation check)
-    // Use contain-style estimation: scale to fit colWidth, but don't scale UP
-    let bestHeight = img.height;
-    if (allowRotation) {
-      const rotatedHeight = img.width;
-      if (rotatedHeight < bestHeight) {
-        bestHeight = rotatedHeight;
-      }
-    }
-    colHeights[minCol] += bestHeight + padding;
-  }
-
-  // Check if any column exceeds canvas height
-  const maxColHeight = Math.max(...colHeights);
-  if (maxColHeight > canvasHeight) {
-    // Some images won't fit - we'll handle in the loop
+  if (!Number.isFinite(maxColumns) || maxColumns <= 0) {
+    return { packed: [], unpacked: images };
   }
 
   const packed: PackedImage[] = [];
   const unpacked: ImageFile[] = [];
 
-  for (let col = 0; col < cols; col++) {
-    let currentY = padding;
+  let columnIndex = 0;
+  let columnStart = gap;
+  let cursorY = gap;
+  let columnMaxWidth = 0;
 
-    for (const img of colImages[col]) {
-      const x = padding + col * (colWidth + padding);
+  const fits = (w: number, h: number) =>
+    columnStart + w <= canvasWidth - gap && cursorY + h <= canvasHeight - gap;
 
-      // Try with rotation if allowed
-      let displayWidth = img.width;
-      let displayHeight = img.height;
-      let rotated = false;
+  for (const img of images) {
+    let chosen: { width: number; height: number; rotated: boolean } | null = null;
 
-      if (allowRotation) {
-        // Use contain-style scaling - don't scale UP, only scale DOWN to fit
-        const normalHeight = img.height;
-        const rotatedHeight = img.width;
-
-        if (rotatedHeight < normalHeight && rotatedHeight <= canvasHeight - currentY - padding) {
-          // Rotation fits better
-          displayWidth = img.height;
-          displayHeight = img.width;
-          rotated = true;
-        } else if (normalHeight <= canvasHeight - currentY - padding) {
-          displayWidth = img.width;
-          displayHeight = normalHeight;
-          rotated = false;
-        } else {
-          // Doesn't fit in this column
-          unpacked.push(img);
-          continue;
-        }
-      } else {
-        // Native size, no scaling
-        if (img.width > colWidth || img.height > canvasHeight - currentY - padding) {
-          unpacked.push(img);
-          continue;
-        }
-        displayWidth = img.width;
-        displayHeight = img.height;
-      }
-
-      packed.push({
-        ...img,
-        x: Math.round(x),
-        y: Math.round(currentY),
-        rotated,
-        displayWidth: Math.round(displayWidth),
-        displayHeight: Math.round(displayHeight),
-      });
-
-      currentY += displayHeight + padding;
+    if (fits(img.width, img.height)) {
+      chosen = { width: img.width, height: img.height, rotated: false };
+    } else if (allowRotation && fits(img.height, img.width)) {
+      chosen = { width: img.height, height: img.width, rotated: true };
     }
+
+    // No room left in this column: open the next one (if allowed) and retry.
+    while (!chosen && columnIndex + 1 < maxColumns) {
+      columnStart = columnStart + columnMaxWidth + gap;
+      cursorY = gap;
+      columnMaxWidth = 0;
+      columnIndex++;
+
+      if (fits(img.width, img.height)) {
+        chosen = { width: img.width, height: img.height, rotated: false };
+      } else if (allowRotation && fits(img.height, img.width)) {
+        chosen = { width: img.height, height: img.width, rotated: true };
+      }
+    }
+
+    if (!chosen) {
+      unpacked.push(img);
+      continue;
+    }
+
+    packed.push({
+      ...img,
+      x: Math.round(columnStart),
+      y: Math.round(cursorY),
+      rotated: chosen.rotated,
+      displayWidth: chosen.width,
+      displayHeight: chosen.height,
+    });
+
+    columnMaxWidth = Math.max(columnMaxWidth, chosen.width);
+    cursorY += chosen.height + gap;
   }
 
-  return { packed, unpacked, canvasWidth, canvasHeight };
+  return { packed, unpacked };
 }
 
 /**
- * Rows layout - fixed number of rows, variable column widths
+ * Rows layout: symmetric to columns. Photos keep native size and advance
+ * horizontally with an exact gap; a new row starts after the tallest photo of the
+ * previous row plus the gap. `rows` is a maximum.
  */
 function packRows(
   images: ImageFile[],
@@ -390,93 +360,75 @@ function packRows(
   padding: number,
   rows: number,
   allowRotation: boolean
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
-  if (images.length === 0 || rows <= 0) {
-    return { packed: [], unpacked: images, canvasWidth, canvasHeight };
+): LayoutOutput {
+  const gap = Math.max(0, padding);
+  const maxRows = Math.floor(rows);
+
+  if (images.length === 0) {
+    return { packed: [], unpacked: [] };
   }
-
-  const r = Math.min(rows, images.length);
-  const rowHeight = (canvasHeight - (r + 1) * padding) / r;
-
-  if (rowHeight <= 0) {
-    return { packed: [], unpacked: images, canvasWidth, canvasHeight };
-  }
-
-  // Distribute images across rows (greedy by width)
-  const rowImages: ImageFile[][] = Array.from({ length: r }, () => []);
-  const rowWidths = Array(r).fill(0);
-
-  for (const img of images) {
-    const minRow = rowWidths.indexOf(Math.min(...rowWidths));
-    rowImages[minRow].push(img);
-
-    let bestWidth = img.width;
-    if (allowRotation) {
-      const rotatedWidth = img.height;
-      if (rotatedWidth < img.width) {
-        bestWidth = rotatedWidth;
-      }
-    }
-    rowWidths[minRow] += bestWidth + padding;
+  if (!Number.isFinite(maxRows) || maxRows <= 0) {
+    return { packed: [], unpacked: images };
   }
 
   const packed: PackedImage[] = [];
   const unpacked: ImageFile[] = [];
 
-  for (let row = 0; row < r; row++) {
-    let currentX = padding;
+  let rowIndex = 0;
+  let rowStart = gap;
+  let cursorX = gap;
+  let rowMaxHeight = 0;
 
-    for (const img of rowImages[row]) {
-      const y = padding + row * (rowHeight + padding);
+  const fits = (w: number, h: number) =>
+    rowStart + h <= canvasHeight - gap && cursorX + w <= canvasWidth - gap;
 
-      let displayWidth = img.width;
-      let displayHeight = img.height;
-      let rotated = false;
+  for (const img of images) {
+    let chosen: { width: number; height: number; rotated: boolean } | null = null;
 
-      if (allowRotation) {
-        const normalWidth = img.width;
-        const rotatedWidth = img.height;
-
-        if (rotatedWidth < normalWidth && rotatedWidth <= canvasWidth - currentX - padding) {
-          displayWidth = img.height;
-          displayHeight = img.width;
-          rotated = true;
-        } else if (normalWidth <= canvasWidth - currentX - padding) {
-          displayWidth = img.width;
-          displayHeight = img.height;
-          rotated = false;
-        } else {
-          unpacked.push(img);
-          continue;
-        }
-      } else {
-        // Native size, no scaling
-        if (img.width > canvasWidth - currentX - padding || img.height > rowHeight) {
-          unpacked.push(img);
-          continue;
-        }
-        displayWidth = img.width;
-        displayHeight = img.height;
-      }
-
-      packed.push({
-        ...img,
-        x: Math.round(currentX),
-        y: Math.round(y),
-        rotated,
-        displayWidth: Math.round(displayWidth),
-        displayHeight: Math.round(displayHeight),
-      });
-
-      currentX += displayWidth + padding;
+    if (fits(img.width, img.height)) {
+      chosen = { width: img.width, height: img.height, rotated: false };
+    } else if (allowRotation && fits(img.height, img.width)) {
+      chosen = { width: img.height, height: img.width, rotated: true };
     }
+
+    while (!chosen && rowIndex + 1 < maxRows) {
+      rowStart = rowStart + rowMaxHeight + gap;
+      cursorX = gap;
+      rowMaxHeight = 0;
+      rowIndex++;
+
+      if (fits(img.width, img.height)) {
+        chosen = { width: img.width, height: img.height, rotated: false };
+      } else if (allowRotation && fits(img.height, img.width)) {
+        chosen = { width: img.height, height: img.width, rotated: true };
+      }
+    }
+
+    if (!chosen) {
+      unpacked.push(img);
+      continue;
+    }
+
+    packed.push({
+      ...img,
+      x: Math.round(cursorX),
+      y: Math.round(rowStart),
+      rotated: chosen.rotated,
+      displayWidth: chosen.width,
+      displayHeight: chosen.height,
+    });
+
+    rowMaxHeight = Math.max(rowMaxHeight, chosen.height);
+    cursorX += chosen.width + gap;
   }
 
-  return { packed, unpacked, canvasWidth, canvasHeight };
+  return { packed, unpacked };
 }
 
 /**
- * Guillotine layout - recursive binary space partitioning
+ * Guillotine layout with a gap gutter. The root free rect sits inside the border
+ * gap, and every split carves a right child and a bottom child offset by `gap`,
+ * clipped to the parent. Children never overlap each other or earlier free rects.
  */
 function packGuillotine(
   images: ImageFile[],
@@ -485,13 +437,19 @@ function packGuillotine(
   padding: number,
   allowRotation: boolean,
   sortingStrategy: SortingStrategy
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number } {
-  // Simple guillotine algorithm using sorted images
+): LayoutOutput {
+  const gap = Math.max(0, padding);
   const sortedImages = sortImages(images, sortingStrategy);
-  
+
   type FreeRect = { x: number; y: number; width: number; height: number };
-  
-  const freeRects: FreeRect[] = [{ x: padding, y: padding, width: canvasWidth - 2 * padding, height: canvasHeight - 2 * padding }];
+
+  const rootWidth = canvasWidth - 2 * gap;
+  const rootHeight = canvasHeight - 2 * gap;
+  if (rootWidth <= 0 || rootHeight <= 0) {
+    return { packed: [], unpacked: images };
+  }
+
+  const freeRects: FreeRect[] = [{ x: gap, y: gap, width: rootWidth, height: rootHeight }];
   const packed: PackedImage[] = [];
   const unpacked: ImageFile[] = [];
 
@@ -503,8 +461,7 @@ function packGuillotine(
 
     for (let i = 0; i < freeRects.length; i++) {
       const fr = freeRects[i];
-      
-      // Try without rotation
+
       if (img.width <= fr.width && img.height <= fr.height) {
         const score = Math.min(fr.width - img.width, fr.height - img.height);
         if (score < bestScore) {
@@ -514,8 +471,7 @@ function packGuillotine(
           bestRotated = false;
         }
       }
-      
-      // Try with rotation
+
       if (allowRotation && img.height <= fr.width && img.width <= fr.height) {
         const score = Math.min(fr.width - img.height, fr.height - img.width);
         if (score < bestScore) {
@@ -530,99 +486,147 @@ function packGuillotine(
     return bestRect ? { rect: bestRect, rotated: bestRotated, index: bestIndex } : null;
   }
 
-  function splitFreeRect(freeRect: FreeRect, placedRect: { x: number; y: number; width: number; height: number }): FreeRect[] {
-    const result: FreeRect[] = [];
-    
-    // Split horizontally (top/bottom)
-    if (placedRect.y > freeRect.y) {
-      result.push({
-        x: freeRect.x,
-        y: freeRect.y,
-        width: freeRect.width,
-        height: placedRect.y - freeRect.y,
-      });
-    }
-    if (placedRect.y + placedRect.height < freeRect.y + freeRect.height) {
-      result.push({
-        x: freeRect.x,
-        y: placedRect.y + placedRect.height,
-        width: freeRect.width,
-        height: freeRect.y + freeRect.height - (placedRect.y + placedRect.height),
-      });
-    }
-    
-    // Split vertically (left/right)
-    if (placedRect.x > freeRect.x) {
-      result.push({
-        x: freeRect.x,
-        y: freeRect.y,
-        width: placedRect.x - freeRect.x,
-        height: freeRect.height,
-      });
-    }
-    if (placedRect.x + placedRect.width < freeRect.x + freeRect.width) {
-      result.push({
-        x: placedRect.x + placedRect.width,
-        y: freeRect.y,
-        width: freeRect.x + freeRect.width - (placedRect.x + placedRect.width),
-        height: freeRect.height,
-      });
-    }
-    
-    return result;
-  }
+  function splitFreeRect(freeRect: FreeRect, placedWidth: number, placedHeight: number): FreeRect[] {
+    const children: FreeRect[] = [];
 
-  function pruneFreeRects(): void {
-    // Remove free rects that are contained within others
-    for (let i = freeRects.length - 1; i >= 0; i--) {
-      for (let j = freeRects.length - 1; j >= 0; j--) {
-        if (i !== j && 
-            freeRects[i].x >= freeRects[j].x &&
-            freeRects[i].y >= freeRects[j].y &&
-            freeRects[i].x + freeRects[i].width <= freeRects[j].x + freeRects[j].width &&
-            freeRects[i].y + freeRects[i].height <= freeRects[j].y + freeRects[j].height) {
-          freeRects.splice(i, 1);
-          break;
-        }
-      }
+    // Right child: beside the placed box, across the placed height only.
+    const rightX = freeRect.x + placedWidth + gap;
+    const rightWidth = freeRect.x + freeRect.width - rightX;
+    if (rightWidth > 0) {
+      children.push({
+        x: rightX,
+        y: freeRect.y,
+        width: rightWidth,
+        height: placedHeight,
+      });
     }
+
+    // Bottom child: below the placed box, across the full parent width.
+    const bottomY = freeRect.y + placedHeight + gap;
+    const bottomHeight = freeRect.y + freeRect.height - bottomY;
+    if (bottomHeight > 0) {
+      children.push({
+        x: freeRect.x,
+        y: bottomY,
+        width: freeRect.width,
+        height: bottomHeight,
+      });
+    }
+
+    return children;
   }
 
   for (const img of sortedImages) {
     const placement = findBestRect(img);
-    
-    if (placement) {
-      const { rect, rotated, index } = placement;
-      const w = rotated ? img.height : img.width;
-      const h = rotated ? img.width : img.height;
-      
-      const placedRect = {
-        x: rect.x,
-        y: rect.y,
-        width: w,
-        height: h,
-      };
-      
-      packed.push({
-        ...img,
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        rotated,
-        displayWidth: Math.round(w),
-        displayHeight: Math.round(h),
-      });
-      
-      // Remove the used free rect and add splits
-      freeRects.splice(index, 1);
-      const newRects = splitFreeRect(rect, placedRect);
-      freeRects.push(...newRects);
-      pruneFreeRects();
-    } else {
+
+    if (!placement) {
       unpacked.push(img);
+      continue;
+    }
+
+    const { rect, rotated, index } = placement;
+    const w = rotated ? img.height : img.width;
+    const h = rotated ? img.width : img.height;
+
+    packed.push({
+      ...img,
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      rotated,
+      displayWidth: Math.round(w),
+      displayHeight: Math.round(h),
+    });
+
+    freeRects.splice(index, 1);
+    freeRects.push(...splitFreeRect(rect, w, h));
+  }
+
+  return { packed, unpacked };
+}
+
+/**
+ * Shared layout dispatch. `packImages` and `packSinglePage` both go through this
+ * so both always apply the same gap, canvas-size and no-resize rules.
+ */
+function dispatchLayout(images: ImageFile[], options: PackingOptions): LayoutOutput {
+  const layoutMode = options.layoutMode || 'mixed';
+  const padding = options.padding ?? 0;
+  const canvasWidth = Math.round(options.canvasSize.width);
+  const canvasHeight = Math.round(options.canvasSize.height);
+
+  // Non-positive dimensions would produce NaN coordinates; treat as unpacked.
+  const validImages: ImageFile[] = [];
+  const invalidImages: ImageFile[] = [];
+  for (const img of images) {
+    if (hasPositiveDimensions(img)) {
+      validImages.push(img);
+    } else {
+      invalidImages.push(img);
     }
   }
 
-  return { packed, unpacked, canvasWidth, canvasHeight };
+  let result: LayoutOutput;
+
+  switch (layoutMode) {
+    case 'uniform':
+    case 'contact-sheet':
+      result = packUniform(validImages, canvasWidth, canvasHeight, padding);
+      break;
+    case 'columns':
+      result = packColumns(
+        validImages,
+        canvasWidth,
+        canvasHeight,
+        padding,
+        options.columns ?? 4,
+        options.allowRotation
+      );
+      break;
+    case 'rows':
+      result = packRows(
+        validImages,
+        canvasWidth,
+        canvasHeight,
+        padding,
+        options.rows ?? 3,
+        options.allowRotation
+      );
+      break;
+    case 'guillotine':
+      result = packGuillotine(
+        validImages,
+        canvasWidth,
+        canvasHeight,
+        padding,
+        options.allowRotation,
+        options.sortingStrategy
+      );
+      break;
+    case 'mixed':
+    default:
+      result = packMixed(
+        validImages,
+        canvasWidth,
+        canvasHeight,
+        options.allowRotation,
+        padding,
+        options.sortingStrategy
+      );
+      break;
+  }
+
+  return { packed: result.packed, unpacked: [...result.unpacked, ...invalidImages] };
+}
+
+function requestedCanvasSize(options: PackingOptions): CanvasSize {
+  return {
+    width: Math.round(options.canvasSize.width),
+    height: Math.round(options.canvasSize.height),
+  };
+}
+
+function packedUsedArea(packed: PackedImage[]): number {
+  return packed.reduce((sum, img) => sum + img.displayWidth * img.displayHeight, 0);
 }
 
 /**
@@ -632,10 +636,14 @@ export function packImages(
   images: ImageFile[],
   options: PackingOptions
 ): PackingResult {
+  const canvasSize = requestedCanvasSize(options);
+  const canvasArea = canvasSize.width * canvasSize.height;
+  const layoutMode = options.layoutMode || 'mixed';
+
   if (images.length === 0) {
     return {
       packedImages: [],
-      canvasSize: options.canvasSize,
+      canvasSize,
       efficiency: 0,
       unusedImages: [],
       stats: {
@@ -645,55 +653,17 @@ export function packImages(
         totalArea: 0,
         usedArea: 0,
         efficiency: 0,
-        canvasArea: options.canvasSize.width * options.canvasSize.height,
+        canvasArea,
       },
-      layoutMode: options.layoutMode || 'mixed',
+      layoutMode,
     };
   }
 
-  // Sort images based on strategy
   const sortedImages = sortImages(images, options.sortingStrategy);
-  
-  // Default layout options
-  const layoutMode = options.layoutMode || 'mixed';
-  const columns = options.columns || 4;
-  const rows = options.rows || 3;
-  const cellPadding = options.cellPadding || 4;
-  const fitMode = options.fitMode || 'contain';
+  const { packed, unpacked } = dispatchLayout(sortedImages, options);
 
-  // Dispatch to appropriate layout function
-  let result: { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number };
-
-  switch (layoutMode) {
-    case 'uniform':
-    case 'contact-sheet':
-      result = packUniform(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, cellPadding, fitMode);
-      break;
-    case 'columns':
-      result = packColumns(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, columns, options.allowRotation);
-      break;
-    case 'rows':
-      result = packRows(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, rows, options.allowRotation);
-      break;
-    case 'guillotine':
-      result = packGuillotine(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, options.allowRotation, options.sortingStrategy);
-      break;
-    case 'mixed':
-    default:
-      result = tryPackMixed(sortedImages, options.canvasSize.width, options.canvasSize.height, options.allowRotation, options.padding, options.sortingStrategy);
-      break;
-  }
-
-  let { packed, unpacked, canvasWidth, canvasHeight } = result;
-
-  // Canvas size is FIXED - never auto-expand. Images that don't fit go to unpacked.
-  const finalWidth = canvasWidth || options.canvasSize.width;
-  const finalHeight = canvasHeight || options.canvasSize.height;
-
-  // Calculate statistics
   const totalArea = images.reduce((sum, img) => sum + img.area, 0);
-  const usedArea = packed.reduce((sum, img) => sum + img.area, 0);
-  const canvasArea = finalWidth * finalHeight;
+  const usedArea = packedUsedArea(packed);
   const efficiency = canvasArea > 0 ? (usedArea / canvasArea) * 100 : 0;
 
   const stats: PackingStats = {
@@ -708,7 +678,7 @@ export function packImages(
 
   return {
     packedImages: packed,
-    canvasSize: { width: finalWidth, height: finalHeight },
+    canvasSize,
     efficiency,
     unusedImages: unpacked,
     stats,
@@ -716,62 +686,27 @@ export function packImages(
   };
 }
 
+interface SinglePageResult {
+  packed: PackedImage[];
+  unpacked: ImageFile[];
+  canvasSize: CanvasSize;
+  efficiency: number;
+}
+
 /**
- * Pack a single page with the given images
- * Returns the same result structure as the internal layout functions
+ * Pack a single page with the given images. The canvas size is always the
+ * requested size.
  */
-function packSinglePage(
-  images: ImageFile[],
-  options: PackingOptions
-): { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number; efficiency: number } {
-  const layoutMode = options.layoutMode || 'mixed';
-  const columns = options.columns || 4;
-  const rows = options.rows || 3;
-  const cellPadding = options.cellPadding || 4;
-  const fitMode = options.fitMode || 'contain';
-
-  // Sort images for this page
+function packSinglePage(images: ImageFile[], options: PackingOptions): SinglePageResult {
+  const canvasSize = requestedCanvasSize(options);
   const sortedImages = sortImages(images, options.sortingStrategy);
+  const { packed, unpacked } = dispatchLayout(sortedImages, options);
 
-  let result: { packed: PackedImage[]; unpacked: ImageFile[]; canvasWidth: number; canvasHeight: number };
-
-  switch (layoutMode) {
-    case 'uniform':
-    case 'contact-sheet':
-      result = packUniform(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, cellPadding, fitMode);
-      break;
-    case 'columns':
-      result = packColumns(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, columns, options.allowRotation);
-      break;
-    case 'rows':
-      result = packRows(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, rows, options.allowRotation);
-      break;
-    case 'guillotine':
-      result = packGuillotine(sortedImages, options.canvasSize.width, options.canvasSize.height, options.padding, options.allowRotation, options.sortingStrategy);
-      break;
-    case 'mixed':
-    default:
-      // For mixed mode, we first try with auto-expand (existing behavior)
-      // If still unpacked after max expansion, we'll handle in the multi-page loop
-      result = tryPackMixed(sortedImages, options.canvasSize.width, options.canvasSize.height, options.allowRotation, options.padding, options.sortingStrategy);
-      break;
-  }
-
-  const finalWidth = result.canvasWidth || options.canvasSize.width;
-  const finalHeight = result.canvasHeight || options.canvasSize.height;
-
-  // Calculate efficiency
-  const usedArea = result.packed.reduce((sum, img) => sum + img.area, 0);
-  const canvasArea = finalWidth * finalHeight;
+  const canvasArea = canvasSize.width * canvasSize.height;
+  const usedArea = packedUsedArea(packed);
   const efficiency = canvasArea > 0 ? (usedArea / canvasArea) * 100 : 0;
 
-  return {
-    packed: result.packed,
-    unpacked: result.unpacked,
-    canvasWidth: finalWidth,
-    canvasHeight: finalHeight,
-    efficiency
-  };
+  return { packed, unpacked, canvasSize, efficiency };
 }
 
 /**
@@ -782,10 +717,14 @@ export function packImagesMultiPage(
   options: PackingOptions,
   maxPages: number = 10
 ): PackingResult {
+  const canvasSize = requestedCanvasSize(options);
+  const canvasArea = canvasSize.width * canvasSize.height;
+  const layoutMode = options.layoutMode || 'mixed';
+
   if (images.length === 0) {
     return {
       packedImages: [],
-      canvasSize: options.canvasSize,
+      canvasSize,
       efficiency: 0,
       unusedImages: [],
       stats: {
@@ -795,65 +734,52 @@ export function packImagesMultiPage(
         totalArea: 0,
         usedArea: 0,
         efficiency: 0,
-        canvasArea: options.canvasSize.width * options.canvasSize.height,
+        canvasArea,
       },
-      layoutMode: options.layoutMode || 'mixed',
+      layoutMode,
       pages: [],
       totalPages: 0,
       isMultiPage: false,
     };
   }
 
-  // Sort images based on strategy
   const sortedImages = sortImages(images, options.sortingStrategy);
-  
+
   let remainingImages = sortedImages;
   const allPages: PackedPage[] = [];
   let pageNumber = 1;
-  const layoutMode = options.layoutMode || 'mixed';
-  const maxPagesLimit = maxPages || 10;
+  const maxPagesLimit = Number.isFinite(maxPages) ? maxPages : 10;
 
-  // For mixed mode, we need to pass the original images to each page attempt
-  // because tryPackMixed re-sorts internally
   const baseOptions: PackingOptions = { ...options };
 
   while (remainingImages.length > 0 && pageNumber <= maxPagesLimit) {
     const singlePageResult = packSinglePage(remainingImages, baseOptions);
-    
+
     // If no images were packed on this page, break to avoid infinite loop
     if (singlePageResult.packed.length === 0) {
       break;
     }
 
-    const pageCanvasSize: CanvasSize = { 
-      width: singlePageResult.canvasWidth, 
-      height: singlePageResult.canvasHeight 
-    };
-
     allPages.push({
       images: singlePageResult.packed,
-      canvasSize: pageCanvasSize,
+      canvasSize: singlePageResult.canvasSize,
       efficiency: singlePageResult.efficiency,
-      pageNumber
+      pageNumber,
     });
 
     remainingImages = singlePageResult.unpacked;
     pageNumber++;
   }
 
-  // If we hit max pages but still have unpacked images, add them to unusedImages
   const unusedImages = remainingImages;
 
-  // Combine all packed images for backward compatibility (first page data)
-  const allPackedImages = allPages.flatMap(page => page.images);
-  const firstPage = allPages[0];
+  const allPackedImages = allPages.flatMap((page) => page.images);
   const totalArea = images.reduce((sum, img) => sum + img.area, 0);
-  const usedArea = allPackedImages.reduce((sum, img) => sum + img.area, 0);
-  const firstPageCanvasArea = firstPage ? firstPage.canvasSize.width * firstPage.canvasSize.height : options.canvasSize.width * options.canvasSize.height;
-  const firstPageEfficiency = firstPageCanvasArea > 0 ? (firstPage?.images.reduce((sum, img) => sum + img.area, 0) || 0) / firstPageCanvasArea * 100 : 0;
+  const usedArea = packedUsedArea(allPackedImages);
 
-  // Calculate total canvas area across all pages
-  const totalCanvasArea = allPages.reduce((sum, page) => sum + page.canvasSize.width * page.canvasSize.height, 0);
+  // Every page has the requested canvas size, so the overall canvas area is a
+  // simple multiple of it.
+  const totalCanvasArea = allPages.length * canvasArea;
   const overallEfficiency = totalCanvasArea > 0 ? (usedArea / totalCanvasArea) * 100 : 0;
 
   const stats: PackingStats = {
@@ -868,8 +794,8 @@ export function packImagesMultiPage(
 
   return {
     packedImages: allPackedImages,
-    canvasSize: firstPage?.canvasSize || options.canvasSize,
-    efficiency: firstPageEfficiency,
+    canvasSize: allPages[0]?.canvasSize ?? canvasSize,
+    efficiency: overallEfficiency,
     unusedImages,
     stats,
     layoutMode,
@@ -972,6 +898,11 @@ export async function downloadPackedCanvas(
       const img = new Image();
       img.onload = () => {
         try {
+          // displayWidth/displayHeight are already swapped for rotated photos,
+          // so draw with the unswapped native box and rotate about the center.
+          const drawnWidth = packedImg.rotated ? packedImg.displayHeight : packedImg.displayWidth;
+          const drawnHeight = packedImg.rotated ? packedImg.displayWidth : packedImg.displayHeight;
+
           ctx.save();
           ctx.translate(packedImg.x + packedImg.displayWidth / 2, packedImg.y + packedImg.displayHeight / 2);
           if (packedImg.rotated) {
@@ -979,10 +910,10 @@ export async function downloadPackedCanvas(
           }
           ctx.drawImage(
             img,
-            -packedImg.displayWidth / 2,
-            -packedImg.displayHeight / 2,
-            packedImg.displayWidth,
-            packedImg.displayHeight
+            -drawnWidth / 2,
+            -drawnHeight / 2,
+            drawnWidth,
+            drawnHeight
           );
           ctx.restore();
           resolve();

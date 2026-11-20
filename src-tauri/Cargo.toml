@@ -1,6 +1,6 @@
 [package]
 name = "packimg"
-version = "1.1.7"
+version = "1.1.9"
 description = "Empaquetado inteligente y eficiente de imágenes usando algoritmo MaxRects"
 authors = ["Gustavo Automatización"]
 edition = "2021"
